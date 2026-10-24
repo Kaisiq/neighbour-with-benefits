@@ -3,28 +3,27 @@ const $$ = (selector) => [...document.querySelectorAll(selector)];
 const form = $('#setup-form');
 const canvas = $('#plinko');
 const ctx = canvas.getContext('2d');
-let mode = 'favor', heat = 'After dark', room = null, token = '', busy = false, animating = false, sound = false, audio;
+let mode = 'favor', room = null, token = '', busy = false, animating = false, sound = false, audio;
 let seenResult = null, chip = null, toastTimer, lastPoll = 0;
 const route = location.pathname;
 const page = route === '/favor' || route === '/dispute' ? 'setup' : route === '/board' ? 'review' : route === '/play' ? 'play' : route === '/result' ? 'result' : 'home';
 $$('[data-page]').forEach(section => section.hidden = section.dataset.page !== page);
 const roomUrl = (path) => `${path}#${room.id}/${token}`;
-const titles = { home: 'Bad Neighbors — Leave it to the gods.', setup: route === '/dispute' ? 'Settle a dispute — Bad Neighbors' : 'Ask a favor — Bad Neighbors', review: 'Review the stakes — Bad Neighbors', play: 'Drop the chip — Bad Neighbors', result: 'Your result — Bad Neighbors' };
+const titles = { home: 'Лоши съседи — Остави на боговете.', setup: route === '/dispute' ? 'Разреши спор — Лоши съседи' : 'Поискай услуга — Лоши съседи', review: 'Прегледай условията — Лоши съседи', play: 'Пусни жетона — Лоши съседи', result: 'Твоят резултат — Лоши съседи' };
 document.title = titles[page];
 function toast(message) { $('#toast').textContent = message; $('#toast').classList.add('visible'); clearTimeout(toastTimer); toastTimer = setTimeout(() => $('#toast').classList.remove('visible'), 3500); }
 function error(message = '') { $('#error').textContent = message; $('#error').hidden = !message; }
 async function api(path, data, auth = token) {
   const response = await fetch(path, { method: data === undefined ? 'GET' : 'POST', headers: { 'Content-Type': 'application/json', ...(auth ? { Authorization: `Bearer ${auth}` } : {}) }, ...(data === undefined ? {} : { body: JSON.stringify(data) }) });
-  const result = await response.json(); if (!response.ok) throw Error(result.error || 'Something went wrong. Try again.'); return result;
+  const result = await response.json(); if (!response.ok) throw Error(result.error || 'Нещо се обърка. Опитай отново.'); return result;
 }
 function setMode(next) {
   mode = next;
   $('#ask-field').hidden = mode !== 'favor'; $('#dispute-fields').hidden = mode !== 'dispute';
   form.elements.ask.required = mode === 'favor'; form.elements.wantA.required = form.elements.wantB.required = mode === 'dispute';
-  $('#form-title').innerHTML = mode === 'favor' ? 'Ask a <em>favor.</em>' : 'Settle a <em>dispute.</em>';
-  $('#form-description').textContent = mode === 'favor' ? 'Tell us what you need. We’ll deal six return favors.' : 'Tell us both sides. We’ll add four alternative resolutions.';
+  $('#form-title').innerHTML = mode === 'favor' ? 'Поискай <em>услуга.</em>' : 'Разреши <em>спор.</em>';
+  $('#form-description').textContent = mode === 'favor' ? 'Кажи от какво имаш нужда. Ще предложим шест ответни услуги.' : 'Опиши двете страни. Ще добавим четири алтернативни решения.';
 }
-$$('[data-heat]').forEach(button => button.addEventListener('click', () => { heat = button.dataset.heat; $$('[data-heat]').forEach(b => { b.classList.toggle('active', b === button); b.setAttribute('aria-pressed', String(b === button)); }); }));
 function renderOptions(options) {
   $('#pockets').replaceChildren(); $('#outcomes').replaceChildren();
   options.forEach((option, index) => {
@@ -34,16 +33,16 @@ function renderOptions(options) {
     pocket.append(number, label); $('#pockets').append(pocket);
     const card = document.createElement('article'); card.className = 'outcome-card';
     const badge = document.createElement('span'); badge.className = 'outcome-number'; badge.textContent = `0${index + 1}`;
-    const chance = document.createElement('span'); chance.className = 'chance'; chance.textContent = '1 IN 6';
+    const chance = document.createElement('span'); chance.className = 'chance'; chance.textContent = '1 КЪМ 6';
     const title = document.createElement('h3'); title.textContent = option.title;
     const detail = document.createElement('p'); detail.textContent = option.detail;
     card.append(badge, chance, title, detail); $('#outcomes').append(card);
   });
 }
-function summary() { return room.input.mode === 'favor' ? `${room.input.nameA} asks ${room.input.nameB}: “${room.input.ask}”` : `${room.input.nameA}: “${room.input.wantA}”\n${room.input.nameB}: “${room.input.wantB}”`; }
+function summary() { return room.input.mode === 'favor' ? `${room.input.nameA} моли ${room.input.nameB}: “${room.input.ask}”` : `${room.input.nameA}: “${room.input.wantA}”\n${room.input.nameB}: “${room.input.wantB}”`; }
 function renderRoom() {
   $('#room-summary').textContent = summary();
-  $('#room-role').textContent = room.input.mode === 'favor' ? `${room.input.nameA} owes the return favor. ${room.input.nameB} drops the chip and fulfills the original request.` : 'Both households approve. Either one can tempt fate.';
+  $('#room-role').textContent = room.input.mode === 'favor' ? `${room.input.nameA} дължи ответната услуга. ${room.input.nameB} пуска жетона и изпълнява първоначалната молба.` : 'И двете домакинства одобряват. Всяко от тях може да изкуши съдбата.';
   $('#share-button').hidden = room.role !== 'owner'; $('#source-label').textContent = room.source.toUpperCase();
   const mine = room.approved[room.role]; $('#board-consent').disabled = mine; if (mine) $('#board-consent').checked = true;
   $('#approve-button').disabled = mine || !$('#board-consent').checked;
@@ -51,24 +50,24 @@ function renderRoom() {
   $('#board-consent-label').hidden = mine;
   $('#continue-button').hidden = !mine;
   $('#continue-button').href = roomUrl(room.result === null ? '/play' : '/result');
-  $('#continue-button').textContent = room.result === null ? 'Continue to Plinko →' : 'See the result →';
+  $('#continue-button').textContent = room.result === null ? 'Продължи към Плинко →' : 'Виж резултата →';
   $$('.board-review-link').forEach(link => link.href = roomUrl('/board'));
   $('#approval-list').replaceChildren();
   [['owner', room.input.nameA], ['guest', room.input.nameB]].forEach(([role, name]) => {
     const row = document.createElement('div'), person = document.createElement('span'), status = document.createElement('span');
-    person.textContent = `${name}${role === room.role ? ' (you)' : ''}`; status.textContent = room.approved[role] ? 'Accepted ✓' : 'Not yet accepted'; if (room.approved[role]) status.className = 'approved'; row.append(person, status); $('#approval-list').append(row);
+    person.textContent = `${name}${role === room.role ? ' (ти)' : ''}`; status.textContent = room.approved[role] ? 'Прието ✓' : 'Все още не е прието'; if (room.approved[role]) status.className = 'approved'; row.append(person, status); $('#approval-list').append(row);
   });
   const ready = room.approved.owner && room.approved.guest;
   const canDrop = room.input.mode === 'dispute' || room.role === 'guest';
   $('#drop-button').disabled = animating || room.result === null && (!ready || !canDrop);
-  $('#drop-label').textContent = animating ? 'Letting fate decide…' : room.result !== null ? 'See the result' : !ready ? 'Waiting for approval' : !canDrop ? `Waiting for ${room.input.nameB}` : 'Drop the chip';
-  $('#board-caption').textContent = room.result !== null ? 'One saved result. No rerolls.' : 'Each outcome has a 1 in 6 chance.';
-  $('#play-instruction').textContent = room.input.mode === 'favor' ? `${room.input.nameB} drops. ${room.input.nameA} owes the return favor.` : `${room.input.nameA} and ${room.input.nameB}. Fate gets the final word.`;
+  $('#drop-label').textContent = animating ? 'Нека съдбата реши…' : room.result !== null ? 'Виж резултата' : !ready ? 'Изчакваме одобрение' : !canDrop ? `Изчакваме ${room.input.nameB}` : 'Пусни жетона';
+  $('#board-caption').textContent = room.result !== null ? 'Един запазен резултат. Без повторно пускане.' : 'Всеки резултат има шанс 1 към 6.';
+  $('#play-instruction').textContent = room.input.mode === 'favor' ? `${room.input.nameB} пуска. ${room.input.nameA} дължи ответната услуга.` : `${room.input.nameA} и ${room.input.nameB}. Съдбата има последната дума.`;
   $('#play-status').replaceChildren();
   if (!ready) {
-    $('#play-status').append(document.createTextNode(!mine ? 'You still need to approve the outcomes. ' : `Waiting for ${room.role === 'owner' ? room.input.nameB : room.input.nameA} to approve. `));
-    const link = document.createElement('a'); link.href = roomUrl('/board'); link.textContent = 'Review board'; $('#play-status').append(link);
-  } else if (!canDrop) $('#play-status').textContent = 'Your neighbor has the controls. Their drop will appear here.';
+    $('#play-status').append(document.createTextNode(!mine ? 'Все още трябва да одобриш вариантите. ' : `Изчакваме одобрение от ${room.role === 'owner' ? room.input.nameB : room.input.nameA}. `));
+    const link = document.createElement('a'); link.href = roomUrl('/board'); link.textContent = 'Прегледай таблото'; $('#play-status').append(link);
+  } else if (!canDrop) $('#play-status').textContent = 'Съседът ти управлява играта. Неговото пускане ще се появи тук.';
   if (room.result !== null && !animating) highlight(room.result);
   if (page === 'result' && room.result !== null) renderResult();
 }
@@ -85,33 +84,33 @@ async function loadRoom(id, secret) {
 }
 form.addEventListener('submit', async event => {
   event.preventDefault(); if (busy) return; busy = true; error();
-  $('#generate').disabled = true; $('#generate').textContent = 'Dealing your consequences…';
+  $('#generate').disabled = true; $('#generate').textContent = 'Подготвяме последствията…';
   try {
     const data = Object.fromEntries(new FormData(form));
-    const created = await api('/api/rooms', { ...data, mode, heat }, '');
+    const created = await api('/api/rooms', { ...data, mode, heat: 'Filthy' }, '');
     token = created.token; room = created;
     location.assign(roomUrl('/board'));
   } catch (err) { error(err.message); }
-  finally { busy = false; $('#generate').disabled = false; $('#generate').innerHTML = '<span>Create our board</span><span>→</span>'; }
+  finally { busy = false; $('#generate').disabled = false; $('#generate').innerHTML = '<span>Създай нашето табло</span><span>→</span>'; }
 });
 $('#board-consent').addEventListener('change', renderRoom);
 $('#approve-button').addEventListener('click', async () => {
   if (!$('#board-consent').checked || busy) return; busy = true;
-  try { room = await api(`/api/rooms/${room.id}/approve`, {}); renderRoom(); toast('Stakes accepted. You’re ready to continue.'); }
+  try { room = await api(`/api/rooms/${room.id}/approve`, {}); renderRoom(); toast('Условията са приети. Можеш да продължиш.'); }
   catch (err) { error(err.message); } finally { busy = false; }
 });
 $('#share-button').addEventListener('click', async () => {
   try {
     const { guestToken } = await api(`/api/rooms/${room.id}/invite`, {});
     const link = `${location.origin}/board#${room.id}/${guestToken}`;
-    try { await navigator.clipboard.writeText(link); toast('Private invite copied. Send it to your neighbor.'); }
-    catch { window.prompt('Copy this private neighbor invite:', link); }
+    try { await navigator.clipboard.writeText(link); toast('Личната покана е копирана. Изпрати я на съседа.'); }
+    catch { window.prompt('Копирай тази лична покана за съседа:', link); }
   } catch (err) { error(err.message); }
 });
 $('#rules-button').addEventListener('click', () => $('#rules-dialog').showModal());
 $$('.close-dialog, .close-rules').forEach(button => button.addEventListener('click', () => button.closest('dialog').close()));
 $$('dialog').forEach(dialog => dialog.addEventListener('click', event => { if (event.target === dialog) { const rect = dialog.getBoundingClientRect(); if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) dialog.close(); } }));
-$('#sound-button').addEventListener('click', () => { sound = !sound; $('#sound-button').textContent = sound ? 'Sound on ♫' : 'Sound off ♩'; $('#sound-button').setAttribute('aria-pressed', String(sound)); if (sound) { audio ||= new (window.AudioContext || window.webkitAudioContext)(); audio.resume().catch(() => {}); ping(600); } });
+$('#sound-button').addEventListener('click', () => { sound = !sound; $('#sound-button').textContent = sound ? 'Със звук ♫' : 'Без звук ♩'; $('#sound-button').setAttribute('aria-pressed', String(sound)); if (sound) { audio ||= new (window.AudioContext || window.webkitAudioContext)(); audio.resume().catch(() => {}); ping(600); } });
 function ping(frequency = 450) {
   if (!sound || !audio) return;
   const oscillator = audio.createOscillator(), volume = audio.createGain(); oscillator.connect(volume); volume.connect(audio.destination); oscillator.type = 'sine'; oscillator.frequency.value = frequency; volume.gain.setValueAtTime(.035, audio.currentTime); volume.gain.exponentialRampToValueAtTime(.001, audio.currentTime + .13); oscillator.start(); oscillator.stop(audio.currentTime + .14);
@@ -193,5 +192,5 @@ if (parts.length === 2 && parts.every(p => /^[a-f0-9]{36}$/.test(p))) {
   if (page === 'home' || page === 'setup') location.replace(`/board${location.hash}`);
   else loadRoom(parts[0], parts[1]);
 }
-else if (location.hash) error('That invite link looks incomplete. Ask your neighbor for the full link.');
-else if (['review', 'play', 'result'].includes(page)) error('Open a neighbor’s invite link or start a new board from the home page.');
+else if (location.hash) error('Поканата изглежда непълна. Поискай целия линк от съседа.');
+else if (['review', 'play', 'result'].includes(page)) error('Отвори покана от съсед или създай ново табло от началната страница.');

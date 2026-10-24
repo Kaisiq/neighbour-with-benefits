@@ -18,34 +18,34 @@ const isDeepSeek = new URL(ai.baseUrl).hostname === 'api.deepseek.com';
 const provider = isDeepSeek ? 'DeepSeek' : 'AI';
 function save() { writeFileSync(file + '.tmp', JSON.stringify(rooms)); renameSync(file + '.tmp', file); }
 function fail(message, status = 400) { throw Object.assign(new Error(message), { status }); }
-function clean(value, max = 600) { if (typeof value !== 'string' || !value.trim() || value.length > max) fail('Please fill in the fields (600 characters maximum).'); return value.trim(); }
+function clean(value, max = 600) { if (typeof value !== 'string' || !value.trim() || value.length > max) fail('Попълни полетата (най-много 600 знака).'); return value.trim(); }
 function deck(input) {
-  const heavy = /move|sofa|renovat|week|paint|party|furniture/i.test(input.ask + ' ' + input.wantA + ' ' + input.wantB);
+  const heavy = /move|sofa|renovat|week|paint|party|furniture|мест[ея]|премест|диван|ремонт|седмиц|боядис|купон|парт[и]|мебел/i.test(input.ask + ' ' + input.wantA + ' ' + input.wantB);
   const minutes = heavy ? 40 : 15;
-  const costumes = input.heat === 'Filthy' ? ['Domestic Slut', 'Your Favorite Bad Decision', 'Certified Neighbor Pleaser'] : ['Hot Mess', 'At Your Service', 'Walk of Shame'];
+  const costumes = input.heat === 'Filthy' ? ['Домашна мръсница', 'Любимото ти лошо решение', 'Сертифициран съседски угодник'] : ['Гореща бъркотия', 'На твоите услуги', 'Поход на срама'];
   const favors = [
-    ['Domestic service', `You owe your neighbor ${minutes} minutes of kitchen cleaning wearing a self-made “${costumes[0]}” apron over your clothes.`],
-    ['Breakfast after dark', `You owe your neighbor ${minutes} minutes of breakfast prep and delivery, with an outrageously seductive menu reading. Ingredients agreed in advance.`],
-    ['Dirty laundry', `You owe your neighbor ${minutes} minutes folding their agreed laundry, in a “${costumes[1]}” outfit of your choosing.`],
-    ['Walk of shame', `You owe your neighbor ${minutes} minutes of bin duty and landing cleanup, wearing a “${costumes[2]}” sign in their company.`],
-    ['Personal temptation', `You owe your neighbor ${minutes} minutes of agreed household errands, introduced with a fully clothed, 30-second cabaret performance.`],
-    ['Scrub me harder', `You owe your neighbor ${minutes} minutes of bathroom cleaning, with a dramatic adult-film-style introduction. No filming required.`]
+    ['Домашно обслужване', `Дължиш на съседа ${minutes} минути чистене на кухнята със саморъчно направена престилка „${costumes[0]}“ върху дрехите.`],
+    ['Закуска след мрак', `Дължиш на съседа ${minutes} минути приготвяне и поднасяне на закуска с безобразно съблазнително четене на менюто. Продуктите се уговарят предварително.`],
+    ['Мръсно пране', `Дължиш на съседа ${minutes} минути сгъване на уговореното пране в избран от теб костюм „${costumes[1]}“.`],
+    ['Поход на срама', `Дължиш на съседа ${minutes} минути изхвърляне на боклука и чистене на площадката с табела „${costumes[2]}“ в негово присъствие.`],
+    ['Лично изкушение', `Дължиш на съседа ${minutes} минути уговорени домашни задачи, започващи с 30-секундно кабаре с всички дрехи.`],
+    ['Търкай ме по-силно', `Дължиш на съседа ${minutes} минути чистене на банята с драматично въведение в стил филм за възрастни. Снимане не се изисква.`]
   ].map(([title, detail]) => ({ title, detail }));
   if (input.mode === 'favor') return favors;
   return [
-    { title: `${input.nameA}'s way`, detail: `${input.nameA}'s resolution: ${input.wantA}` },
+    { title: `По волята на ${input.nameA}`, detail: `Решението на ${input.nameA}: ${input.wantA}` },
     ...[
-      ['Kiss & compromise', `Each household gets half of its requested time or access, arranged together. ${input.nameA} owes a fully clothed, 30-second cabaret apology; ${input.nameB} owes ${minutes} minutes of shared-space cleanup.`],
-      ['Your turn, darling', `${input.nameA}'s resolution applies this time; ${input.nameB}'s applies to the next comparable occasion. ${input.nameA} owes ${minutes} minutes of household help wearing an “At Your Service” sign.`],
-      ['Beg for it', `${input.nameB}'s resolution applies this time; ${input.nameA}'s applies next time. ${input.nameB} owes ${minutes} minutes of household help, introduced with a dramatic, suggestive apology.`],
-      ['Mutual satisfaction', `Neither original demand applies tonight. Agree a middle ground before proceeding; each household owes ${Math.ceil(minutes / 2)} minutes of shared cleanup in self-chosen “Hot Mess” outfits.`]
+      ['Целувка и компромис', `Всяко домакинство получава половината от поисканото време или достъп по обща уговорка. ${input.nameA} дължи 30-секундно кабаре извинение с всички дрехи; ${input.nameB} дължи ${minutes} минути чистене на общите части.`],
+      ['Твой ред е, скъпи', `Този път важи решението на ${input.nameA}; следващия подобен път — на ${input.nameB}. ${input.nameA} дължи ${minutes} минути помощ в дома с табела „На твоите услуги“.`],
+      ['Помоли се', `Този път важи решението на ${input.nameB}; следващия път — на ${input.nameA}. ${input.nameB} дължи ${minutes} минути помощ в дома, започваща с драматично извинение с намеци.`],
+      ['Взаимно удовлетворение', `Нито едно от първоначалните искания не важи тази вечер. Уговорете средно положение преди да продължите; всяко домакинство дължи ${Math.ceil(minutes / 2)} минути общо чистене с избрани от него костюми „Гореща бъркотия“.`]
     ].map(([title, detail]) => ({ title, detail })),
-    { title: `${input.nameB}'s way`, detail: `${input.nameB}'s resolution: ${input.wantB}` }
+    { title: `По волята на ${input.nameB}`, detail: `Решението на ${input.nameB}: ${input.wantB}` }
   ];
 }
 async function generate(input) {
   const fallback = deck(input);
-  if (!ai.key) return { options: fallback, source: `House deck · ${provider} not configured` };
+  if (!ai.key) return { options: fallback, source: `Готови варианти · ${provider} не е настроен` };
   try {
     const response = await fetch(ai.baseUrl.replace(/\/$/, '') + '/chat/completions', {
       method: 'POST', signal: AbortSignal.timeout(45000),
@@ -62,17 +62,17 @@ async function generate(input) {
     const options = JSON.parse(choice.message.content).options;
     if (!Array.isArray(options) || options.length !== 6 || options.some(o => !o || typeof o.title !== 'string' || !o.title.trim() || o.title.length > 70 || typeof o.detail !== 'string' || !o.detail.trim() || o.detail.length > 700) || new Set(options.map(o => o.title.trim().toLowerCase())).size !== 6) throw Error('Invalid board');
     if (input.mode === 'dispute') { options[0] = fallback[0]; options[5] = fallback[5]; }
-    return { options: options.map(({ title, detail }) => ({ title: title.trim(), detail: detail.trim() })), source: `${provider} generated` };
+    return { options: options.map(({ title, detail }) => ({ title: title.trim(), detail: detail.trim() })), source: `Генерирано от ${provider}` };
   } catch (error) {
     // Log a bounded failure category, never provider content, credentials or neighbor requests.
     const reason = /^HTTP \d{3}$/.test(error.message) ? error.message : error.name === 'TimeoutError' ? 'timeout' : 'invalid or unavailable response';
     console.warn(`[${provider}] Board generation failed (${reason}); using house deck.`);
-    return { options: fallback, source: `House deck · ${provider} unavailable` };
+    return { options: fallback, source: `Готови варианти · ${provider} е недостъпен` };
   }
 }
 async function body(req) {
-  let data = ''; for await (const chunk of req) { data += chunk; if (data.length > 12000) fail('Request too large', 413); }
-  try { return JSON.parse(data); } catch { fail('Invalid request'); }
+  let data = ''; for await (const chunk of req) { data += chunk; if (data.length > 12000) fail('Заявката е твърде голяма', 413); }
+  try { return JSON.parse(data); } catch { fail('Невалидна заявка'); }
 }
 function view(room, role) { const { ownerKey, guestKey, ...publicRoom } = room; return { ...publicRoom, role }; }
 const server = http.createServer(async (req, res) => {
@@ -80,9 +80,9 @@ const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://localhost');
     if (url.pathname === '/api/rooms' && req.method === 'POST') {
-      if (Object.keys(rooms).length >= 10000) fail('The house is full. Ask the host to archive old boards.', 503);
+      if (Object.keys(rooms).length >= 10000) fail('Къщата е пълна. Помоли администратора да архивира старите табла.', 503);
       const raw = await body(req);
-      const input = { mode: raw.mode === 'dispute' ? 'dispute' : 'favor', nameA: clean(raw.nameA, 35), nameB: clean(raw.nameB, 35), heat: ['Tease', 'After dark', 'Filthy'].includes(raw.heat) ? raw.heat : 'After dark' };
+      const input = { mode: raw.mode === 'dispute' ? 'dispute' : 'favor', nameA: clean(raw.nameA, 35), nameB: clean(raw.nameB, 35), heat: 'Filthy' };
       if (input.mode === 'favor') input.ask = clean(raw.ask);
       else { input.wantA = clean(raw.wantA); input.wantB = clean(raw.wantB); }
       const generated = await generate(input);
@@ -93,26 +93,26 @@ const server = http.createServer(async (req, res) => {
     const match = url.pathname.match(/^\/api\/rooms\/([a-f0-9]{36})(?:\/(approve|drop|invite))?$/);
     if (match) {
       const room = rooms[match[1]];
-      if (!room) fail('This board could not be found.', 404);
+      if (!room) fail('Това табло не е намерено.', 404);
       const token = req.headers.authorization?.replace(/^Bearer /, '');
       const role = token === room.ownerKey ? 'owner' : token === room.guestKey ? 'guest' : null;
-      if (!role) fail('This invite link is not valid.', 403);
+      if (!role) fail('Тази покана е невалидна.', 403);
       if (req.method === 'GET' && !match[2]) return send(200, view(room, role));
       if (req.method === 'POST' && match[2] === 'invite' && role === 'owner') return send(200, { guestToken: room.guestKey });
       if (req.method === 'POST' && match[2] === 'approve') { room.approved[role] = true; save(); return send(200, view(room, role)); }
       if (req.method === 'POST' && match[2] === 'drop') {
-        if (!room.approved.owner || !room.approved.guest) fail('Both neighbors must approve every outcome first.');
-        if (room.input.mode === 'favor' && role !== 'guest') fail('Your neighbor gets to drop this chip.');
+        if (!room.approved.owner || !room.approved.guest) fail('И двамата съседи трябва първо да одобрят всички варианти.');
+        if (room.input.mode === 'favor' && role !== 'guest') fail('Този жетон се пуска от съседа ти.');
         if (room.result === null) { room.result = randomInt(6); room.settledAt = Date.now(); save(); }
         return send(200, view(room, role));
       }
-      fail('Action unavailable', 405);
+      fail('Действието е недостъпно', 405);
     }
-    if (url.pathname.startsWith('/api/')) fail('Not found', 404);
+    if (url.pathname.startsWith('/api/')) fail('Не е намерено', 404);
     const assets = { '/': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/style.css': ['style.css', 'text/css'], '/favicon.svg': ['favicon.svg', 'image/svg+xml'] };
-    const asset = ['/favor', '/dispute', '/board', '/play', '/result'].includes(url.pathname) ? assets['/'] : assets[url.pathname]; if (!asset) fail('Not found', 404);
+    const asset = ['/favor', '/dispute', '/board', '/play', '/result'].includes(url.pathname) ? assets['/'] : assets[url.pathname]; if (!asset) fail('Не е намерено', 404);
     res.writeHead(200, { 'Content-Type': asset[1] + '; charset=utf-8', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer' });
     res.end(readFileSync(resolve('public', asset[0])));
-  } catch (error) { send(error.status || 500, { error: error.status ? error.message : 'The house hit a snag. Please try again.' }); }
+  } catch (error) { send(error.status || 500, { error: error.status ? error.message : 'Възникна проблем. Опитай отново.' }); }
 });
 server.listen(Number(process.env.PORT) || 3000, '0.0.0.0', () => console.log(`Bad Neighbors → http://localhost:${process.env.PORT || 3000}`));
