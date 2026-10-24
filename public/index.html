@@ -2,52 +2,56 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="theme-color" content="#110c0e"><meta name="description" content="Settle the tension. A little neighborly negotiation, a little bad luck. Two ways to leave it to the Plinko gods.">
+  <meta name="theme-color" content="#110c0e"><meta name="description" content="Ask a favor. Settle a dispute. Leave the outcome to Plinko.">
   <title>Bad Neighbors — Leave it to the gods.</title>
   <link rel="icon" href="/favicon.svg"><link rel="stylesheet" href="/style.css">
   <script type="module" src="/app.js"></script>
 </head>
 <body>
-  <div class="ambient" aria-hidden="true"></div>
-  <header class="site-header">
-    <a class="brand" href="/" aria-label="Bad Neighbors home"><span class="brand-mark">◆</span> BAD NEIGHBORS<span class="brand-dot">®</span></a>
-    <div class="header-right"><span class="adult-tag">STRICTLY 18+</span><button class="text-button" id="rules-button">The house rules <span>↗</span></button></div>
-  </header>
+  <header class="site-header"><a class="brand" href="/" aria-label="Bad Neighbors home"><span class="brand-mark">◆</span> BAD NEIGHBORS</a><button class="text-button" id="rules-button">How it works <span>↗</span></button></header>
   <main>
-    <section class="intro">
-      <div><div class="eyebrow"><span class="live-dot"></span> A LITTLE TENSION LOOKS GOOD ON YOU</div><h1>Good fences.<br><em>Bad decisions.</em></h1></div>
-      <div class="intro-aside"><span class="tiny-diamond">✧</span><p>Settle a dispute. Ask a favor.<br>Let the Plinko gods decide<br>who owes whom.</p><span class="intro-note">NO MONEY. JUST CONSEQUENCES.</span></div>
-    </section>
-    <section class="workbench">
-      <aside class="setup-panel">
-        <div class="panel-kicker"><span>01 / SET THE SCENE</span><span>↘</span></div>
-        <div class="mode-switch" role="group" aria-label="Choose game mode"><button class="active" data-mode="favor">♡ &nbsp; A favor</button><button data-mode="dispute">⚡ &nbsp; A dispute</button></div>
-        <h2 id="form-title">Neighbor with benefits.</h2><p class="form-description" id="form-description">You ask. They play. You return the favor.<br>How badly do you want it?</p>
-        <form id="setup-form">
-          <div class="name-row"><label>Your name<input name="nameA" placeholder="e.g. Alex" maxlength="35" required autocomplete="given-name"></label><label>Your neighbor<input name="nameB" placeholder="e.g. Jamie" maxlength="35" required></label></div>
-          <label id="ask-field">What are you asking for?<textarea name="ask" placeholder="Help me carry my sofa up three flights of stairs…" maxlength="600" required></textarea></label>
-          <div id="dispute-fields" hidden><label>Your side<textarea name="wantA" placeholder="I want the music off by 11…" maxlength="600"></textarea></label><label>Their side<textarea name="wantB" placeholder="I want to keep the party going until 1…" maxlength="600"></textarea></label></div>
-          <div class="heat-heading"><label>How much trouble?</label><span>CHOOSE YOUR HEAT</span></div>
-          <div class="heat-switch" role="group" aria-label="Choose heat level"><button type="button" data-heat="Tease">Tease</button><button type="button" data-heat="After dark" class="active">After dark</button><button type="button" data-heat="Filthy">Filthy <span>♨</span></button></div>
-          <label class="consent"><input type="checkbox" id="adult-consent" required><span>I’m 18+. We’ll both review the stakes before we play.</span></label>
-          <button class="primary-button" id="generate" type="submit"><span>Deal me a little trouble</span><span>↗</span></button>
-          <p class="under-button">Six possible outcomes. One deliciously bad idea.</p>
-        </form>
-        <div id="room-controls" hidden><div class="invite-note"><span class="eyebrow">THE STAKES ARE SET</span><p id="room-summary"></p><p id="room-role"></p></div><button class="secondary-button" id="share-button">Copy neighbor’s invite ↗</button><label class="consent"><input type="checkbox" id="board-consent"><span>I’ve read all six outcomes and agree to this board.</span></label><button class="primary-button" id="approve-button">Accept the stakes <span>♡</span></button><div class="approval-list" id="approval-list"></div><button class="text-button start-over" id="new-board">↶ Start a different kind of trouble</button></div>
-        <p id="error" class="error" role="alert" hidden></p>
-      </aside>
-      <div class="game-panel">
-        <div class="game-heading"><div><span class="panel-kicker">02 / TEMPT FATE</span><h2>The house of <em>bad ideas.</em></h2></div><span class="board-badge" id="board-badge"><span class="live-dot"></span> HOUSE PREVIEW</span></div>
-        <div class="board-wrap"><div class="board-topline"><span>LET GO OF CONTROL</span><span>01 CHIP · 06 POSSIBILITIES</span></div><canvas id="plinko" aria-label="Animated Plinko board with six equally likely outcomes" role="img"></canvas><div class="pockets" id="pockets"></div><div class="board-bottomline"><span>✦</span><span>THE GODS HAVE QUESTIONABLE TASTE.</span><span>✦</span></div></div>
-        <button class="drop-button" id="drop-button" disabled><span>◆</span><span id="drop-label">Your trouble starts on the left</span><span>↓</span></button>
-        <div class="board-caption"><span id="board-caption">All pockets get equal odds. Nobody gets special treatment.</span><button class="sound-button" id="sound-button" aria-pressed="false">Sound off ♩</button></div>
+    <section data-page="home" class="home-page" hidden>
+      <span class="eyebrow">A LITTLE NEIGHBORLY TROUBLE</span>
+      <h1>Good fences.<br><em>Bad decisions.</em></h1>
+      <p class="home-description">Ask a favor or settle a dispute.<br>Let Plinko decide what happens next.</p>
+      <div class="mode-cards">
+        <a class="mode-card" href="/favor"><span class="mode-icon">♡</span><div><h2>Ask a favor</h2><p>They help you. You owe a little something.</p></div><span class="arrow">↗</span></a>
+        <a class="mode-card" href="/dispute"><span class="mode-icon">⚡</span><div><h2>Settle a dispute</h2><p>Two sides. One drop. Let fate settle it.</p></div><span class="arrow">↗</span></a>
       </div>
+      <p class="home-note">18+ · No money. Just consequences.</p>
     </section>
-    <section class="stakes-section"><div class="stakes-heading"><div><span class="eyebrow">READ THE FINE PRINT. IT’S FILTHY.</span><h2>What’s on the table.</h2></div><span id="source-label">A TASTE OF THE HOUSE</span></div><div id="outcomes" class="outcomes"></div></section>
-    <footer><span class="brand footer-brand"><span class="brand-mark">◆</span> BAD NEIGHBORS</span><span>Good neighbors talk. Bad neighbors drop.</span><span>BUILT FOR BAD IDEAS. PLAYED BY CONSENT.</span></footer>
+    <section data-page="setup" class="narrow-page" hidden>
+      <a class="back-link" href="/">← Choose a mode</a>
+      <div class="page-heading"><span class="eyebrow">01 / SET THE SCENE</span><h1 id="form-title">Ask a <em>favor.</em></h1><p id="form-description">Tell us what you need. We’ll deal six return favors.</p></div>
+      <form id="setup-form">
+        <div class="name-row"><label>Your name<input name="nameA" placeholder="Alex" maxlength="35" required autocomplete="given-name"></label><label>Your neighbor<input name="nameB" placeholder="Jamie" maxlength="35" required></label></div>
+        <label id="ask-field">What would you like them to do?<textarea name="ask" placeholder="Help me carry my sofa upstairs…" maxlength="600" required></textarea></label>
+        <div id="dispute-fields" hidden><label>What do you want?<textarea name="wantA" placeholder="Music off by 11 tonight…" maxlength="600"></textarea></label><label>What does your neighbor want?<textarea name="wantB" placeholder="Keep the party going until 1…" maxlength="600"></textarea></label></div>
+        <fieldset class="heat-field"><legend>Choose the mood</legend><div class="heat-switch"><button type="button" data-heat="Tease" aria-pressed="false">Tease</button><button type="button" data-heat="After dark" class="active" aria-pressed="true">After dark</button><button type="button" data-heat="Filthy" aria-pressed="false">Filthy ♨</button></div></fieldset>
+        <label class="consent"><input type="checkbox" id="adult-consent" required><span>I’m 18+. We’ll both approve the outcomes before playing.</span></label>
+        <button class="primary-button" id="generate" type="submit"><span>Create our board</span><span>→</span></button>
+      </form>
+    </section>
+    <section data-page="review" class="review-page" hidden>
+      <a class="back-link" href="/">← Home</a>
+      <div class="page-heading"><span class="eyebrow">02 / AGREE ON THE STAKES</span><h1>Know what you’re <em>in for.</em></h1><p>Read all six outcomes. Only play if you both agree.</p></div>
+      <div class="request-summary"><p id="room-summary"></p><p id="room-role"></p></div>
+      <div class="stakes-heading"><h2>The six possible outcomes</h2><span id="source-label"></span></div>
+      <div id="outcomes" class="outcomes"></div>
+      <div id="room-controls" class="review-actions"><button class="secondary-button" id="share-button">Copy neighbor’s invite ↗</button><label class="consent" id="board-consent-label"><input type="checkbox" id="board-consent"><span>I’ve read all six outcomes and agree to this board.</span></label><button class="primary-button" id="approve-button">Accept the stakes <span>♡</span></button><div class="approval-list" id="approval-list"></div><a id="continue-button" class="primary-button" href="#" hidden>Continue to Plinko <span>→</span></a></div>
+    </section>
+    <section data-page="play" class="play-page" hidden>
+      <a class="back-link board-review-link" href="#">← Review the stakes</a>
+      <div class="page-heading"><span class="eyebrow">03 / LEAVE IT TO FATE</span><h1>One drop.<br><em>No second guesses.</em></h1><p id="play-instruction">Both neighbors agree. Then the gods take over.</p></div>
+      <div class="game-panel"><div class="board-wrap"><canvas id="plinko" aria-label="Plinko board with six equally likely outcomes" role="img"></canvas><div class="pockets" id="pockets"></div></div><button class="drop-button" id="drop-button" disabled><span>◆</span><span id="drop-label">Waiting for your board…</span><span>↓</span></button><div class="board-caption"><span id="board-caption">Each outcome has a 1 in 6 chance.</span><button class="sound-button" id="sound-button" aria-pressed="false">Sound off ♩</button></div><p id="play-status" class="play-status"></p></div>
+    </section>
+    <section data-page="result" class="result-page" hidden>
+      <span class="result-symbol">✦</span><span class="eyebrow">THE GODS HAVE SPOKEN</span><h1 id="result-title"></h1><p id="result-detail"></p><div class="result-original" id="result-original"></div><a class="primary-button" href="/">Start something new <span>↗</span></a><a class="text-button board-review-link" href="#">Review the original board</a>
+    </section>
+    <p id="error" class="error" role="alert" hidden></p>
   </main>
-  <dialog id="rules-dialog"><button class="close-dialog" aria-label="Close house rules">×</button><span class="eyebrow">WELCOME TO THE HOUSE</span><h2>A little bad.<br><em>Never unwilling.</em></h2><p><b>A favor:</b> the requester owes the selected return favor. The invited neighbor drops the chip and fulfills the original request.</p><p><b>A dispute:</b> your two demands anchor the board. Four alternative settlements fill the gaps. Either neighbor can drop after both approve.</p><p>Read every outcome. Both adults approve the complete board. One server-recorded drop settles it, with a 1 in 6 chance per pocket. The animation celebrates the draw.</p><p>Innuendo, costumes and embarrassing chores are fair game. Sexual contact, nudity, recording and public participation are never implied. Anyone can withdraw consent; this is a social agreement, not an enforceable contract.</p><p class="muted">An invite link grants access to its board. Share it privately.</p><button class="primary-button close-rules">Sounds like trouble ↗</button></dialog>
-  <dialog id="result-dialog"><button class="close-dialog" aria-label="Close result">×</button><div class="result-symbol">✦</div><span class="eyebrow">THE GODS HAVE SPOKEN</span><h2 id="result-title"></h2><p id="result-detail"></p><div class="result-original" id="result-original"></div><button class="primary-button close-rules">Consider it settled <span>♡</span></button><p class="under-button">One drop. No take-backs. Consent always comes first.</p></dialog>
+  <footer><span>BAD NEIGHBORS</span><span>A little bad. Always mutual.</span></footer>
+  <dialog id="rules-dialog"><button class="close-dialog" aria-label="Close house rules">×</button><span class="eyebrow">HOW IT WORKS</span><h2>A little bad.<br><em>Never unwilling.</em></h2><p><b>Ask a favor.</b> Your neighbor helps you. They drop the chip to choose the return favor you owe.</p><p><b>Settle a dispute.</b> Each side gets a pocket. Four alternative settlements complete the board. One drop decides.</p><p>Both adults read and approve all six outcomes first. Every pocket has a 1 in 6 chance, and the result is saved. There are no cash stakes.</p><p>Costumes, innuendo and embarrassing chores. No implied consent to sexual contact, nudity or recording. Anyone can withdraw consent.</p><p class="muted">Share invite links privately: they grant access to your board.</p><button class="primary-button close-rules">Got it <span>→</span></button></dialog>
   <div id="toast" role="status"></div>
 </body>
 </html>

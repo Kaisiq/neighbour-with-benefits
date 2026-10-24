@@ -5,14 +5,12 @@ const canvas = $('#plinko');
 const ctx = canvas.getContext('2d');
 let mode = 'favor', heat = 'After dark', room = null, token = '', busy = false, animating = false, sound = false, audio;
 let seenResult = null, chip = null, toastTimer, lastPoll = 0;
-const preview = [
-  { title: 'Domestic service', detail: 'A little elbow grease. A very suggestive apron. Your neighbor’s kitchen has never felt so appreciated.' },
-  { title: 'Breakfast after dark', detail: 'Breakfast delivered with a menu reading that would get you fired from a respectable restaurant.' },
-  { title: 'Dirty laundry', detail: 'Their laundry, your problem. Dress like you’re auditioning for a very questionable housekeeping service.' },
-  { title: 'Walk of shame', detail: 'Take out the bins. Clean the landing. Wear the title with a deeply inappropriate amount of pride.' },
-  { title: 'Personal temptation', detail: 'A few household errands, opened by a fully clothed cabaret performance nobody asked to remember.' },
-  { title: 'Scrub me harder', detail: 'Bathroom cleaning with a ridiculous adult-film introduction. All clothes stay on. All grime comes off.' }
-];
+const route = location.pathname;
+const page = route === '/favor' || route === '/dispute' ? 'setup' : route === '/board' ? 'review' : route === '/play' ? 'play' : route === '/result' ? 'result' : 'home';
+$$('[data-page]').forEach(section => section.hidden = section.dataset.page !== page);
+const roomUrl = (path) => `${path}#${room.id}/${token}`;
+const titles = { home: 'Bad Neighbors — Leave it to the gods.', setup: route === '/dispute' ? 'Settle a dispute — Bad Neighbors' : 'Ask a favor — Bad Neighbors', review: 'Review the stakes — Bad Neighbors', play: 'Drop the chip — Bad Neighbors', result: 'Your result — Bad Neighbors' };
+document.title = titles[page];
 function toast(message) { $('#toast').textContent = message; $('#toast').classList.add('visible'); clearTimeout(toastTimer); toastTimer = setTimeout(() => $('#toast').classList.remove('visible'), 3500); }
 function error(message = '') { $('#error').textContent = message; $('#error').hidden = !message; }
 async function api(path, data, auth = token) {
@@ -21,13 +19,11 @@ async function api(path, data, auth = token) {
 }
 function setMode(next) {
   mode = next;
-  $$('[data-mode]').forEach(button => { button.classList.toggle('active', button.dataset.mode === mode); button.setAttribute('aria-pressed', String(button.dataset.mode === mode)); });
   $('#ask-field').hidden = mode !== 'favor'; $('#dispute-fields').hidden = mode !== 'dispute';
   form.elements.ask.required = mode === 'favor'; form.elements.wantA.required = form.elements.wantB.required = mode === 'dispute';
-  $('#form-title').textContent = mode === 'favor' ? 'Neighbor with benefits.' : 'Settle the tension.';
-  $('#form-description').textContent = mode === 'favor' ? 'You ask. They play. You return the favor. How badly do you want it?' : 'Two sides. Six outcomes. One drop. Leave your little disagreement to the gods.';
+  $('#form-title').innerHTML = mode === 'favor' ? 'Ask a <em>favor.</em>' : 'Settle a <em>dispute.</em>';
+  $('#form-description').textContent = mode === 'favor' ? 'Tell us what you need. We’ll deal six return favors.' : 'Tell us both sides. We’ll add four alternative resolutions.';
 }
-$$('[data-mode]').forEach(button => button.addEventListener('click', () => { if (!room) setMode(button.dataset.mode); }));
 $$('[data-heat]').forEach(button => button.addEventListener('click', () => { heat = button.dataset.heat; $$('[data-heat]').forEach(b => { b.classList.toggle('active', b === button); b.setAttribute('aria-pressed', String(b === button)); }); }));
 function renderOptions(options) {
   $('#pockets').replaceChildren(); $('#outcomes').replaceChildren();
@@ -46,15 +42,17 @@ function renderOptions(options) {
 }
 function summary() { return room.input.mode === 'favor' ? `${room.input.nameA} asks ${room.input.nameB}: “${room.input.ask}”` : `${room.input.nameA}: “${room.input.wantA}”\n${room.input.nameB}: “${room.input.wantB}”`; }
 function renderRoom() {
-  form.hidden = true; $('#room-controls').hidden = false;
-  $$('[data-mode]').forEach(b => b.disabled = true);
   $('#room-summary').textContent = summary();
   $('#room-role').textContent = room.input.mode === 'favor' ? `${room.input.nameA} owes the return favor. ${room.input.nameB} drops the chip and fulfills the original request.` : 'Both households approve. Either one can tempt fate.';
   $('#share-button').hidden = room.role !== 'owner'; $('#source-label').textContent = room.source.toUpperCase();
-  $('#board-badge').replaceChildren(); const dot = document.createElement('span'); dot.className = 'live-dot'; $('#board-badge').append(dot, document.createTextNode(room.result !== null ? 'SETTLED BY THE GODS' : 'LIVE BOARD'));
   const mine = room.approved[room.role]; $('#board-consent').disabled = mine; if (mine) $('#board-consent').checked = true;
   $('#approve-button').disabled = mine || !$('#board-consent').checked;
-  $('#approve-button').textContent = mine ? 'Your stakes are accepted ✓' : 'Accept the stakes ♡';
+  $('#approve-button').hidden = mine;
+  $('#board-consent-label').hidden = mine;
+  $('#continue-button').hidden = !mine;
+  $('#continue-button').href = roomUrl(room.result === null ? '/play' : '/result');
+  $('#continue-button').textContent = room.result === null ? 'Continue to Plinko →' : 'See the result →';
+  $$('.board-review-link').forEach(link => link.href = roomUrl('/board'));
   $('#approval-list').replaceChildren();
   [['owner', room.input.nameA], ['guest', room.input.nameB]].forEach(([role, name]) => {
     const row = document.createElement('div'), person = document.createElement('span'), status = document.createElement('span');
@@ -63,15 +61,24 @@ function renderRoom() {
   const ready = room.approved.owner && room.approved.guest;
   const canDrop = room.input.mode === 'dispute' || room.role === 'guest';
   $('#drop-button').disabled = animating || room.result === null && (!ready || !canDrop);
-  $('#drop-label').textContent = animating ? 'The gods are making a terrible decision…' : room.result !== null ? 'See what the gods decided' : !ready ? 'Waiting for both neighbors to accept' : !canDrop ? `Waiting for ${room.input.nameB} to drop` : 'Drop it like it’s hot';
-  $('#board-caption').textContent = room.result !== null ? 'Settled. This board cannot be rerolled.' : 'All six outcomes have equal odds. Read them before accepting.';
+  $('#drop-label').textContent = animating ? 'Letting fate decide…' : room.result !== null ? 'See the result' : !ready ? 'Waiting for approval' : !canDrop ? `Waiting for ${room.input.nameB}` : 'Drop the chip';
+  $('#board-caption').textContent = room.result !== null ? 'One saved result. No rerolls.' : 'Each outcome has a 1 in 6 chance.';
+  $('#play-instruction').textContent = room.input.mode === 'favor' ? `${room.input.nameB} drops. ${room.input.nameA} owes the return favor.` : `${room.input.nameA} and ${room.input.nameB}. Fate gets the final word.`;
+  $('#play-status').replaceChildren();
+  if (!ready) {
+    $('#play-status').append(document.createTextNode(!mine ? 'You still need to approve the outcomes. ' : `Waiting for ${room.role === 'owner' ? room.input.nameB : room.input.nameA} to approve. `));
+    const link = document.createElement('a'); link.href = roomUrl('/board'); link.textContent = 'Review board'; $('#play-status').append(link);
+  } else if (!canDrop) $('#play-status').textContent = 'Your neighbor has the controls. Their drop will appear here.';
   if (room.result !== null && !animating) highlight(room.result);
+  if (page === 'result' && room.result !== null) renderResult();
 }
 function highlight(index) { $$('.pocket').forEach((el, i) => el.classList.toggle('winner', i === index)); $$('.outcome-card').forEach((el, i) => el.classList.toggle('selected', i === index)); }
 async function loadRoom(id, secret) {
   try {
     token = secret; room = await api(`/api/rooms/${id}`); setMode(room.input.mode); renderOptions(room.options); renderRoom();
     seenResult = room.result;
+    if (page === 'result' && room.result === null) return location.replace(roomUrl('/board'));
+    if (page === 'play' && room.result !== null) return showResult();
     if (room.result !== null) { chip = { x: (room.result + .5) / 6, y: .98 }; draw(); }
     else { chip = null; draw(); }
   } catch (err) { error(err.message); toast(err.message); }
@@ -82,29 +89,25 @@ form.addEventListener('submit', async event => {
   try {
     const data = Object.fromEntries(new FormData(form));
     const created = await api('/api/rooms', { ...data, mode, heat }, '');
-    token = created.token; room = created; seenResult = null; chip = null;
-    history.replaceState(null, '', `#${room.id}/${token}`);
-    renderOptions(room.options); renderRoom(); draw();
-    toast('Board dealt. Review all six outcomes, then invite your neighbor.');
-    if (window.innerWidth < 721) $('.stakes-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    token = created.token; room = created;
+    location.assign(roomUrl('/board'));
   } catch (err) { error(err.message); }
-  finally { busy = false; $('#generate').disabled = false; $('#generate').innerHTML = '<span>Deal me a little trouble</span><span>↗</span>'; }
+  finally { busy = false; $('#generate').disabled = false; $('#generate').innerHTML = '<span>Create our board</span><span>→</span>'; }
 });
 $('#board-consent').addEventListener('change', renderRoom);
 $('#approve-button').addEventListener('click', async () => {
   if (!$('#board-consent').checked || busy) return; busy = true;
-  try { room = await api(`/api/rooms/${room.id}/approve`, {}); renderRoom(); toast('Accepted. Your neighbor needs to accept too.'); }
+  try { room = await api(`/api/rooms/${room.id}/approve`, {}); renderRoom(); toast('Stakes accepted. You’re ready to continue.'); }
   catch (err) { error(err.message); } finally { busy = false; }
 });
 $('#share-button').addEventListener('click', async () => {
   try {
     const { guestToken } = await api(`/api/rooms/${room.id}/invite`, {});
-    const link = `${location.origin}/#${room.id}/${guestToken}`;
+    const link = `${location.origin}/board#${room.id}/${guestToken}`;
     try { await navigator.clipboard.writeText(link); toast('Private invite copied. Send it to your neighbor.'); }
     catch { window.prompt('Copy this private neighbor invite:', link); }
   } catch (err) { error(err.message); }
 });
-$('#new-board').addEventListener('click', () => { location.href = '/'; });
 $('#rules-button').addEventListener('click', () => $('#rules-dialog').showModal());
 $$('.close-dialog, .close-rules').forEach(button => button.addEventListener('click', () => button.closest('dialog').close()));
 $$('dialog').forEach(dialog => dialog.addEventListener('click', event => { if (event.target === dialog) { const rect = dialog.getBoundingClientRect(); if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) dialog.close(); } }));
@@ -115,11 +118,15 @@ function ping(frequency = 450) {
 }
 function showResult() {
   if (!room || room.result === null) return;
+  location.assign(roomUrl('/result'));
+}
+function renderResult() {
   $('#result-title').textContent = room.options[room.result].title; $('#result-detail').textContent = room.options[room.result].detail;
-  $('#result-original').textContent = summary(); if (!$('#result-dialog').open) $('#result-dialog').showModal();
+  $('#result-original').textContent = summary();
 }
 function draw() {
   const width = canvas.clientWidth, height = canvas.clientHeight, dpr = window.devicePixelRatio || 1;
+  if (!width || !height) return;
   if (canvas.width !== Math.round(width * dpr) || canvas.height !== Math.round(height * dpr)) { canvas.width = Math.round(width * dpr); canvas.height = Math.round(height * dpr); }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, width, height);
   const margin = 23, usable = width - margin * 2;
@@ -142,6 +149,7 @@ function draw() {
   ctx.beginPath(); ctx.arc(x, y, 8, 0, Math.PI * 2); ctx.fillStyle = ball; ctx.fill(); ctx.strokeStyle = '#ffc9ad'; ctx.lineWidth = 1; ctx.stroke();
 }
 function animateDrop(index) {
+  if (page !== 'play') { renderRoom(); return; }
   animating = true; renderRoom();
   const start = performance.now(), reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const duration = reduced ? 100 : 3400, target = (index + .5) / 6;
@@ -152,7 +160,7 @@ function animateDrop(index) {
   }
   let lastStep = -1;
   function frame(now) {
-    const progress = Math.min(1, (now - start) / duration), pos = progress * 10, step = Math.min(9, Math.floor(pos)), fraction = pos - step;
+    const progress = Math.max(0, Math.min(1, (now - start) / duration)), pos = progress * 10, step = Math.min(9, Math.floor(pos)), fraction = pos - step;
     chip = { x: path[step] + (path[step + 1] - path[step]) * fraction, y: .065 + progress * .9 - Math.sin(fraction * Math.PI) * .018 };
     if (step !== lastStep) { ping(350 + step * 48); lastStep = step; }
     draw();
@@ -179,7 +187,11 @@ setInterval(async () => {
 }, 2000);
 window.addEventListener('hashchange', () => location.reload());
 new ResizeObserver(draw).observe(canvas);
-renderOptions(preview); setMode('favor');
+setMode(route === '/dispute' ? 'dispute' : 'favor');
 const parts = location.hash.slice(1).split('/');
-if (parts.length === 2 && parts.every(p => /^[a-f0-9]{36}$/.test(p))) loadRoom(parts[0], parts[1]);
+if (parts.length === 2 && parts.every(p => /^[a-f0-9]{36}$/.test(p))) {
+  if (page === 'home' || page === 'setup') location.replace(`/board${location.hash}`);
+  else loadRoom(parts[0], parts[1]);
+}
 else if (location.hash) error('That invite link looks incomplete. Ask your neighbor for the full link.');
+else if (['review', 'play', 'result'].includes(page)) error('Open a neighbor’s invite link or start a new board from the home page.');
