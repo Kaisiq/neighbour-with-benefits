@@ -5,6 +5,8 @@ const canvas = $('#plinko');
 const ctx = canvas.getContext('2d');
 let mode = 'favor', room = null, token = '', busy = false, animating = false, sound = false, audio;
 let seenResult = null, chip = null, toastTimer, lastPoll = 0;
+let launchX = .5, trail = [], impacts = [], landingAt = 0;
+const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 const route = location.pathname;
 const page = route === '/favor' || route === '/dispute' ? 'setup' : route === '/board' ? 'review' : route === '/play' ? 'play' : route === '/result' ? 'result' : 'home';
 $$('[data-page]').forEach(section => section.hidden = section.dataset.page !== page);
@@ -27,7 +29,13 @@ function setMode(next) {
 function renderOptions(options) {
   $('#pockets').replaceChildren(); $('#outcomes').replaceChildren();
   options.forEach((option, index) => {
-    const pocket = document.createElement('div'); pocket.className = 'pocket'; pocket.title = option.detail;
+    const pocket = document.createElement('button'); pocket.type = 'button'; pocket.className = 'pocket'; pocket.title = option.detail;
+    pocket.setAttribute('aria-label', `Вариант ${index + 1}: ${option.title}. ${option.detail}`);
+    pocket.addEventListener('click', () => {
+      if (animating || landingAt) return;
+      $('#board-outcome').textContent = `${String(index + 1).padStart(2, '0')} · ${option.title} — ${option.detail}`;
+      $$('.pocket').forEach((el, i) => el.classList.toggle('inspecting', i === index));
+    });
     const number = document.createElement('span'); number.className = 'pocket-number'; number.textContent = `0${index + 1}`;
     const label = document.createElement('span'); label.textContent = option.title;
     pocket.append(number, label); $('#pockets').append(pocket);
@@ -59,6 +67,8 @@ function renderRoom() {
   });
   const ready = room.approved.owner && room.approved.guest;
   const canDrop = room.input.mode === 'dispute' || room.role === 'guest';
+  $('#launch-position').disabled = busy || animating || room.result !== null || !ready || !canDrop;
+  $('#board-state').textContent = animating ? 'СЪДБАТА СИ ИГРАЕ С ТЕБ…' : room.result !== null ? 'БОГОВЕТЕ СЕ ПРОИЗНЕСОХА' : ready && canDrop ? 'ИЗБЕРИ НАЧАЛНА ПОЗИЦИЯ' : 'ОЧАКВАМЕ СЪСЕДИТЕ';
   $('#drop-button').disabled = animating || room.result === null && (!ready || !canDrop);
   $('#drop-label').textContent = animating ? 'Нека съдбата реши…' : room.result !== null ? 'Виж резултата' : !ready ? 'Изчакваме одобрение' : !canDrop ? `Изчакваме ${room.input.nameB}` : 'Пусни жетона';
   $('#board-caption').textContent = room.result !== null ? 'Един запазен резултат. Без повторно пускане.' : 'Всеки резултат има шанс 1 към 6.';
@@ -123,56 +133,141 @@ function renderResult() {
   $('#result-title').textContent = room.options[room.result].title; $('#result-detail').textContent = room.options[room.result].detail;
   $('#result-original').textContent = summary();
 }
+const pegRows = 10;
+function pegPositions(row) {
+  const count = row % 2 ? 5 : 6;
+  return Array.from({ length: count }, (_, col) => (col + (row % 2 ? 1 : .5)) / 6);
+}
+function moveLaunch(value) {
+  if (!room || $('#launch-position').disabled || animating) return;
+  launchX = Math.max(.25, Math.min(.75, value));
+  $('#launch-position').value = String(Math.round(launchX * 100));
+  chip = null; draw();
+}
+$('#launch-position').addEventListener('input', event => moveLaunch(Number(event.target.value) / 100));
+canvas.addEventListener('pointerdown', event => {
+  if ($('#launch-position').disabled) return;
+  canvas.setPointerCapture(event.pointerId);
+  moveLaunch((event.clientX - canvas.getBoundingClientRect().left - 17) / (canvas.clientWidth - 34));
+});
+canvas.addEventListener('pointermove', event => {
+  if (canvas.hasPointerCapture(event.pointerId)) moveLaunch((event.clientX - canvas.getBoundingClientRect().left - 17) / (canvas.clientWidth - 34));
+});
 function draw() {
-  const width = canvas.clientWidth, height = canvas.clientHeight, dpr = window.devicePixelRatio || 1;
+  const width = canvas.clientWidth, height = canvas.clientHeight, dpr = Math.min(window.devicePixelRatio || 1, 2);
   if (!width || !height) return;
   if (canvas.width !== Math.round(width * dpr) || canvas.height !== Math.round(height * dpr)) { canvas.width = Math.round(width * dpr); canvas.height = Math.round(height * dpr); }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, width, height);
-  const margin = 23, usable = width - margin * 2;
-  // The server draws a uniform outcome; the chip is its illustrative reveal, not a physics-based RNG.
-  for (let row = 0; row < 9; row++) {
-    const count = row + 3, y = 65 + row * ((height - 93) / 9), spread = usable * (row + 3) / 11;
-    for (let col = 0; col < count; col++) {
-      const x = width / 2 - spread / 2 + col * spread / (count - 1);
-      ctx.beginPath(); ctx.arc(x, y, 3.1, 0, Math.PI * 2); ctx.fillStyle = '#a66d80'; ctx.shadowColor = '#f28ca555'; ctx.shadowBlur = 7; ctx.fill(); ctx.shadowBlur = 0;
-      ctx.beginPath(); ctx.arc(x - .6, y - .8, 1.05, 0, Math.PI * 2); ctx.fillStyle = '#e2b4c2'; ctx.fill();
+  const now = performance.now(), usable = width - 34;
+  const px = x => 17 + x * usable;
+  const glow = (x, y, radius, color) => {
+    const gradient = ctx.createRadialGradient(x, y, 0, x, y, radius);
+    gradient.addColorStop(0, color); gradient.addColorStop(1, '#ee405600');
+    ctx.fillStyle = gradient; ctx.fillRect(x - radius, y - radius, radius * 2, radius * 2);
+  };
+  ctx.strokeStyle = '#aa445019'; ctx.lineWidth = 1;
+  for (let i = 1; i < 6; i++) { ctx.beginPath(); ctx.moveTo(px(i / 6), 48); ctx.lineTo(px(i / 6), height); ctx.stroke(); }
+  if (!animating && !landingAt && !$('#launch-position').disabled) {
+    ctx.setLineDash([2, 6]); ctx.strokeStyle = '#ed7a9460'; ctx.beginPath(); ctx.moveTo(px(launchX), 30); ctx.lineTo(px(launchX), 65); ctx.stroke(); ctx.setLineDash([]);
+  }
+  for (let row = 0; row < pegRows; row++) {
+    const y = (.2 + row * .071) * height;
+    for (const x of pegPositions(row)) {
+      const hit = impacts.findLast(impact => impact.row === row && Math.abs(impact.x - x) < .01);
+      const intensity = hit ? Math.max(0, 1 - (now - hit.at) / 650) : 0;
+      if (intensity) glow(px(x), y, 23 * intensity, `rgba(255,75,111,${intensity * .5})`);
+      ctx.beginPath(); ctx.arc(px(x), y, intensity ? 4.1 : 3.3, 0, Math.PI * 2); ctx.fillStyle = intensity ? '#ffd4df' : '#986578'; ctx.fill();
+      ctx.beginPath(); ctx.arc(px(x) - .7, y - 1, 1.1, 0, Math.PI * 2); ctx.fillStyle = '#f4c6d3'; ctx.fill();
     }
   }
-  ctx.strokeStyle = '#713247'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(width * .5 - 26, 8); ctx.lineTo(width * .5 - 17, 28); ctx.lineTo(width * .5 - 17, 39); ctx.moveTo(width * .5 + 26, 8); ctx.lineTo(width * .5 + 17, 28); ctx.lineTo(width * .5 + 17, 39); ctx.stroke();
-  for (let i = 0; i <= 6; i++) { const x = 17 + (width - 34) * i / 6; ctx.beginPath(); ctx.moveTo(x, height - 20); ctx.lineTo(x, height); ctx.stroke(); }
-  const x = chip ? 17 + chip.x * (width - 34) : width / 2;
-  const y = chip ? chip.y * height : 20;
-  const glow = ctx.createRadialGradient(x, y, 2, x, y, 28); glow.addColorStop(0, '#f6577580'); glow.addColorStop(1, '#f6577500'); ctx.fillStyle = glow; ctx.fillRect(x - 28, y - 28, 56, 56);
-  const ball = ctx.createRadialGradient(x - 2, y - 3, 1, x, y, 9); ball.addColorStop(0, '#ffe5cb'); ball.addColorStop(.4, '#efb894'); ball.addColorStop(1, '#b64b48');
-  ctx.beginPath(); ctx.arc(x, y, 8, 0, Math.PI * 2); ctx.fillStyle = ball; ctx.fill(); ctx.strokeStyle = '#ffc9ad'; ctx.lineWidth = 1; ctx.stroke();
+  if (!reducedMotion.matches) for (const impact of impacts) {
+    const age = (now - impact.at) / 500; if (age < 0 || age > 1) continue;
+    for (let i = 0; i < 6; i++) {
+      const angle = i * Math.PI / 3 + impact.row;
+      ctx.globalAlpha = 1 - age; ctx.fillStyle = i % 2 ? '#f9bd91' : '#ff658b';
+      ctx.fillRect(px(impact.x) + Math.cos(angle) * age * 25, (.2 + impact.row * .071) * height + Math.sin(angle) * age * 19 + age * age * 12, 2, 2);
+    }
+  }
+  ctx.globalAlpha = 1;
+  for (let i = 0; i <= 6; i++) { ctx.strokeStyle = '#914456'; ctx.beginPath(); ctx.moveTo(px(i / 6), height - 20); ctx.lineTo(px(i / 6), height); ctx.stroke(); }
+  if (trail.length > 1 && !reducedMotion.matches) {
+    for (let i = 1; i < trail.length; i++) {
+      ctx.beginPath(); ctx.moveTo(px(trail[i - 1].x), trail[i - 1].y * height); ctx.lineTo(px(trail[i].x), trail[i].y * height);
+      ctx.strokeStyle = `rgba(255,99,135,${i / trail.length * .65})`; ctx.lineWidth = 1 + i / trail.length * 5; ctx.lineCap = 'round'; ctx.stroke();
+    }
+  }
+  const x = px(chip ? chip.x : launchX), y = chip ? chip.y * height : 24;
+  glow(x, y, 35, '#fa4d7966');
+  const ball = ctx.createRadialGradient(x - 3, y - 4, 1, x, y, 10); ball.addColorStop(0, '#fff1d8'); ball.addColorStop(.4, '#f1c29b'); ball.addColorStop(1, '#a74e4a');
+  ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2); ctx.fillStyle = ball; ctx.fill(); ctx.strokeStyle = '#ffdcbd'; ctx.lineWidth = 1.3; ctx.stroke();
+  ctx.beginPath(); ctx.arc(x, y, 5.5, 0, Math.PI * 2); ctx.strokeStyle = '#ad624f'; ctx.lineWidth = .7; ctx.stroke();
+  if (landingAt && !reducedMotion.matches) {
+    const age = Math.min(1, (now - landingAt) / 1000);
+    ctx.strokeStyle = `rgba(255,168,190,${1 - age})`; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(x, y, 10 + age * 55, 0, Math.PI * 2); ctx.stroke();
+    for (let i = 0; i < 24; i++) {
+      const angle = i * 2.39996; ctx.globalAlpha = 1 - age;
+      ctx.fillStyle = i % 3 ? '#f9648a' : '#f9d29c';
+      ctx.fillRect(x + Math.cos(angle) * age * 85, y - Math.abs(Math.sin(angle)) * age * 85 + age * age * 45, 3, 5);
+    }
+    ctx.globalAlpha = 1;
+  }
 }
 function animateDrop(index) {
   if (page !== 'play') { renderRoom(); return; }
-  animating = true; renderRoom();
-  const start = performance.now(), reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const duration = reduced ? 100 : 3400, target = (index + .5) / 6;
-  const path = [.5];
-  for (let row = 1; row <= 10; row++) {
-    const progress = row / 10;
-    path.push(Math.max(.04, Math.min(.96, .5 + (target - .5) * progress + (row === 10 ? 0 : (Math.random() - .5) * .13))));
+  animating = true; trail = []; impacts = []; landingAt = 0;
+  $('.board-wrap').classList.add('dropping');
+  $$('.pocket').forEach(el => el.classList.remove('inspecting'));
+  $('#board-outcome').textContent = 'Един жетон. Шест възможности. Няма връщане назад.';
+  renderRoom();
+  const start = performance.now(), reduced = reducedMotion.matches;
+  const duration = reduced ? 180 : 4300, target = (index + .5) / 6;
+  // A route through real peg coordinates reveals the server's equal-odds draw.
+  // Starting position changes the animation, not the probability or saved result.
+  const path = [{ x: launchX, y: .065 }];
+  for (let row = 0; row < pegRows; row++) {
+    const progress = (row + 1) / (pegRows + 1);
+    const desired = launchX + (target - launchX) * progress + (Math.random() - .5) * .22 * Math.sin(progress * Math.PI);
+    const x = pegPositions(row).reduce((best, candidate) => Math.abs(candidate - desired) < Math.abs(best - desired) ? candidate : best);
+    path.push({ x, y: .2 + row * .071 - .027 });
   }
+  path.push({ x: target, y: .97 });
   let lastStep = -1;
   function frame(now) {
-    const progress = Math.max(0, Math.min(1, (now - start) / duration)), pos = progress * 10, step = Math.min(9, Math.floor(pos)), fraction = pos - step;
-    chip = { x: path[step] + (path[step + 1] - path[step]) * fraction, y: .065 + progress * .9 - Math.sin(fraction * Math.PI) * .018 };
-    if (step !== lastStep) { ping(350 + step * 48); lastStep = step; }
+    const progress = Math.max(0, Math.min(1, (now - start) / duration));
+    // Slow the last two rebounds for a little suspense at the pocket dividers.
+    const travel = progress < .73 ? progress * 1.12 : .8176 + (progress - .73) / .27 * .1824;
+    const pos = Math.min(path.length - 1, travel * (path.length - 1));
+    const step = Math.min(path.length - 2, Math.floor(pos)), fraction = pos - step;
+    const from = path[step], to = path[step + 1];
+    chip = { x: from.x + (to.x - from.x) * fraction, y: from.y + (to.y - from.y) * fraction * fraction - (step ? Math.sin(fraction * Math.PI) * .017 : 0) };
+    if (step !== lastStep) {
+      if (step > 0) { impacts.push({ row: step - 1, x: from.x, at: now }); ping(470 + step * 38); }
+      lastStep = step;
+    }
+    trail.push({ ...chip }); if (trail.length > 14) trail.shift();
     draw();
     if (progress < 1) requestAnimationFrame(frame);
-    else { chip = { x: target, y: .98 }; animating = false; highlight(index); draw(); renderRoom(); ping(1050); setTimeout(showResult, 400); }
+    else {
+      chip = { x: target, y: .97 }; trail = []; landingAt = performance.now();
+      animating = false; highlight(index); renderRoom();
+      $('.board-wrap').classList.remove('dropping'); $('.board-wrap').classList.add('landed');
+      $('#board-outcome').textContent = `${String(index + 1).padStart(2, '0')} · ${room.options[index].title}`;
+      $('#board-outcome').classList.add('revealed');
+      $('#board-state').textContent = 'ЕТО ТВОЯТА СЪДБА';
+      [0, 110, 220].forEach((delay, i) => setTimeout(() => ping([659, 831, 988][i]), delay));
+      const revealStart = performance.now();
+      function reveal(now) { draw(); if (now - revealStart < (reduced ? 250 : 1600)) requestAnimationFrame(reveal); else showResult(); }
+      requestAnimationFrame(reveal);
+    }
   }
   requestAnimationFrame(frame);
 }
 $('#drop-button').addEventListener('click', async () => {
   if (!room || busy || animating) return;
-  if (room.result !== null) return showResult(); busy = true; $('#drop-button').disabled = true;
+  if (room.result !== null) return showResult(); busy = true; $('#drop-button').disabled = true; $('#launch-position').disabled = true;
   try { room = await api(`/api/rooms/${room.id}/drop`, {}); seenResult = room.result; animateDrop(room.result); }
-  catch (err) { error(err.message); renderRoom(); } finally { busy = false; }
+  catch (err) { error(err.message); } finally { busy = false; if (!animating) renderRoom(); }
 });
 setInterval(async () => {
   if (!room || busy || animating || document.hidden || room.result !== null || Date.now() - lastPoll < 1800) return;
@@ -185,7 +280,7 @@ setInterval(async () => {
   } catch { /* Retain the board through temporary connection failures. */ }
 }, 2000);
 window.addEventListener('hashchange', () => location.reload());
-new ResizeObserver(draw).observe(canvas);
+new ResizeObserver(() => draw()).observe(canvas);
 setMode(route === '/dispute' ? 'dispute' : 'favor');
 const parts = location.hash.slice(1).split('/');
 if (parts.length === 2 && parts.every(p => /^[a-f0-9]{36}$/.test(p))) {

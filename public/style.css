@@ -3,3 +3,24 @@
 @media(max-width:720px){.site-header{padding:21px 22px}.brand{font-size:10px;letter-spacing:1.5px;gap:8px}.brand-mark{font-size:21px}.site-header .text-button{font-size:11px}main{padding:0 23px;min-height:calc(100svh - 134px)}.home-page{padding:42px 0 34px;text-align:left;max-width:440px}.home-page>.eyebrow{font-size:9px;letter-spacing:1.6px}.home-page h1{font-size:56px;letter-spacing:-2px;margin:21px 0}.home-description{font-size:14px;line-height:1.8;margin-bottom:28px}.mode-cards{grid-template-columns:1fr;gap:12px}.mode-card{padding:20px;grid-template-columns:28px 1fr 18px;gap:15px;align-items:center}.mode-icon{font-size:27px}.mode-card>div{grid-column:2;grid-row:1}.mode-card h2{font-size:22px;margin-bottom:6px}.mode-card p{font-size:12px;max-width:none;line-height:1.6}.arrow{grid-column:3;font-size:20px}.home-note{font-size:10px;margin-top:25px}.narrow-page,.review-page,.play-page{padding-top:19px;padding-bottom:40px}.back-link{margin-bottom:27px}.page-heading{margin-bottom:26px}.page-heading h1{font-size:38px;letter-spacing:-1.3px}.page-heading>p{font-size:13px}.eyebrow{font-size:9px;letter-spacing:1.7px}.name-row{gap:12px}label,legend{font-size:12px}input:not([type=checkbox]),textarea{font-size:16px;padding:12px;margin-bottom:22px}textarea{min-height:112px}.consent{font-size:11px}.primary-button,.secondary-button,.drop-button{font-size:13px;min-height:50px}.outcomes{grid-template-columns:1fr;gap:10px}.outcome-card{padding:18px 16px;grid-template-columns:29px 1fr}.outcome-card h3{font-size:21px;margin-bottom:8px}.outcome-card p{font-size:12px}.request-summary{padding-left:15px;margin-bottom:28px}.request-summary p:first-child{font-size:14px}.stakes-heading h2{font-size:12px}.stakes-heading>span{font-size:8px}.review-actions{margin-top:25px}.play-page .page-heading h1{font-size:36px}.play-page .page-heading>p{font-size:12px}#plinko{height:265px}.pockets{gap:4px;margin-inline:12px;margin-bottom:12px}.pocket{min-height:39px;padding:9px 2px}.pocket-number{font-size:11px}.board-caption{font-size:10px}.sound-button{font-size:10px}.result-page{padding:47px 0}.result-page h1{font-size:38px;letter-spacing:-1px}.result-page>p{font-size:14px}.result-symbol{font-size:52px}.result-original{font-size:12px}.result-page>.text-button{font-size:12px}footer{margin:0 23px;padding:20px 0;font-size:9px}footer>span:first-child{font-size:8px;letter-spacing:1px}dialog{padding:30px 24px}}
 @media(max-width:360px){.home-page h1{font-size:49px}.mode-card{padding:17px 14px;gap:12px}.mode-card p{font-size:11px}.brand{font-size:9px}.site-header .text-button{font-size:10px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
+
+/* Plinko: one focused board, with tactile feedback rather than extra panels. */
+.board-wrap{position:relative;padding-top:0;background:radial-gradient(ellipse at 50% 25%,#411a2b,#190f16 75%);transition:border-color .3s,box-shadow .3s}
+.board-hud{display:flex;justify-content:space-between;gap:12px;padding:15px 18px 3px;color:#b98094;font-size:8px;letter-spacing:1.3px}
+.board-hud>span:last-child{color:#936575;white-space:nowrap;font-size:7px}
+#plinko{height:340px;touch-action:pan-y;cursor:crosshair}
+.launch-control{display:flex;align-items:center;gap:20px;margin:3px 18px 15px}
+.launch-control label{font-size:10px;color:#ac8596;white-space:nowrap}
+input#launch-position{display:block;width:100%;height:18px;padding:0;margin:0;border:0;background:transparent;accent-color:#f26080;cursor:ew-resize;box-shadow:none}
+input#launch-position:disabled{opacity:.3;cursor:default}
+.board-outcome{border-top:1px solid #4b2937;margin:0;padding:13px 18px;font-size:11px;line-height:1.7;color:#b593a1;min-height:45px;overflow-wrap:anywhere}
+.board-outcome.revealed{color:#ffd4dc;font-family:var(--serif);font-size:21px;text-align:center;background:#8a29422b}
+.pocket{font-family:var(--sans);cursor:pointer;position:relative}
+.pocket:hover,.pocket.inspecting{border-color:#c26a86;background:#4c2234;color:#fff0f5}
+.pocket.winner{background:linear-gradient(#d74468,#8c2845);box-shadow:0 0 28px #f14c7b66,inset 0 1px 0 #ffbecf;border-color:#ffb1c6;transform:translateY(-3px)}
+.board-wrap.dropping{border-color:#a94462;box-shadow:0 0 38px #d32b5119}
+.board-wrap.dropping .launch-control{opacity:.4}
+.board-wrap.landed{border-color:#f37998;box-shadow:0 0 55px #ee40562b}
+.drop-button:enabled{box-shadow:0 5px 28px #ed40562a;transition:transform .15s,background .15s,box-shadow .15s}
+.drop-button:active:enabled{transform:translateY(2px);box-shadow:0 2px 12px #ed40562a}
+@media(max-width:720px){#plinko{height:285px}.board-hud{font-size:7px;letter-spacing:.8px;padding:13px 13px 2px}.board-hud>span:last-child{font-size:6px;letter-spacing:.5px}.launch-control{margin-inline:13px;gap:14px}.launch-control label{font-size:9px}.board-outcome{padding:11px 13px;font-size:10px}.board-outcome.revealed{font-size:19px}}
