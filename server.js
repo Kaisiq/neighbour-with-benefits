@@ -74,7 +74,43 @@ async function body(req) {
   let data = ''; for await (const chunk of req) { data += chunk; if (data.length > 12000) fail('Заявката е твърде голяма', 413); }
   try { return JSON.parse(data); } catch { fail('Невалидна заявка'); }
 }
-function view(room, role) { const { ownerKey, guestKey, ...publicRoom } = room; return { ...publicRoom, role }; }
+// Live connections stay in memory; the selected result and animation survive restarts.
+const connections = new Map();
+const presence = room => Object.fromEntries(['owner', 'guest'].map(role => [role,
+  [...(connections.get(room.id) || [])].some(peer => peer.role === role && peer.screen === 'play' && peer.visible && Date.now() - peer.updatedAt < 6500)
+]));
+function reconcileSpin(room) {
+  const spin = room.spin;
+  if (!spin || spin.finishedAt) return;
+  const now = Date.now(), time = spin.pausedAt ?? now;
+  if (time >= spin.startsAt + spin.duration + spin.revealDuration) { spin.finishedAt = now; save(); return; }
+  const watching = presence(room);
+  if ((!watching.owner || !watching.guest) && spin.pausedAt == null) { spin.pausedAt = now; save(); }
+  else if (watching.owner && watching.guest && spin.pausedAt != null) {
+    spin.startsAt += now - spin.pausedAt; spin.pausedAt = null; save();
+  }
+}
+function view(room, role) {
+  const { ownerKey, guestKey, ...publicRoom } = room;
+  return { ...publicRoom, role, presence: presence(room), serverTime: Date.now() };
+}
+function publish(room) {
+  reconcileSpin(room);
+  for (const peer of connections.get(room.id) || []) {
+    if (!peer.res.destroyed) peer.res.write(`data: ${JSON.stringify(view(room, peer.role))}\n\n`);
+  }
+}
+function spinPath(result) {
+  const target = (result + .5) / 6, path = [{ x: .5, y: .065 }];
+  for (let row = 0; row < 10; row++) {
+    const progress = (row + 1) / 11;
+    const desired = .5 + (target - .5) * progress + (randomInt(10000) / 10000 - .5) * .22 * Math.sin(progress * Math.PI);
+    const pegs = Array.from({ length: row % 2 ? 5 : 6 }, (_, col) => (col + (row % 2 ? 1 : .5)) / 6);
+    path.push({ x: pegs.reduce((best, x) => Math.abs(x - desired) < Math.abs(best - desired) ? x : best), y: .2 + row * .071 - .027 });
+  }
+  return [...path, { x: target, y: .97 }];
+}
+setInterval(() => { for (const id of connections.keys()) if (rooms[id]) publish(rooms[id]); }, 2000).unref();
 const server = http.createServer(async (req, res) => {
   const send = (status, data) => { res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(data)); };
   try {
@@ -90,20 +126,45 @@ const server = http.createServer(async (req, res) => {
       rooms[room.id] = room; save();
       return send(201, { ...view(room, 'owner'), token: room.ownerKey, guestToken: room.guestKey });
     }
-    const match = url.pathname.match(/^\/api\/rooms\/([a-f0-9]{36})(?:\/(approve|drop|invite))?$/);
+    const match = url.pathname.match(/^\/api\/rooms\/([a-f0-9]{36})(?:\/(approve|drop|invite|events|presence))?$/);
     if (match) {
       const room = rooms[match[1]];
       if (!room) fail('Това табло не е намерено.', 404);
       const token = req.headers.authorization?.replace(/^Bearer /, '');
       const role = token === room.ownerKey ? 'owner' : token === room.guestKey ? 'guest' : null;
       if (!role) fail('Тази покана е невалидна.', 403);
-      if (req.method === 'GET' && !match[2]) return send(200, view(room, role));
+      if (req.method === 'GET' && match[2] === 'events') {
+        const clientId = clean(url.searchParams.get('clientId'), 80);
+        const peers = connections.get(room.id) || new Set();
+        // A reconnect replaces its previous connection without impersonating the other role.
+        for (const peer of peers) if (peer.role === role && peer.clientId === clientId) { peers.delete(peer); peer.res.end(); }
+        res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', 'Connection': 'keep-alive', 'X-Accel-Buffering': 'no' });
+        res.flushHeaders();
+        const peer = { res, role, clientId, screen: '', visible: false, updatedAt: 0 };
+        peers.add(peer); connections.set(room.id, peers);
+        res.on('close', () => { peers.delete(peer); publish(room); if (!peers.size && connections.get(room.id) === peers) connections.delete(room.id); });
+        publish(room); return;
+      }
+      if (req.method === 'POST' && match[2] === 'presence') {
+        const raw = await body(req);
+        for (const peer of connections.get(room.id) || []) if (peer.role === role && peer.clientId === raw.clientId) {
+          peer.screen = raw.screen === 'play' ? 'play' : 'review'; peer.visible = raw.visible === true; peer.updatedAt = Date.now();
+        }
+        publish(room); return send(200, view(room, role));
+      }
+      if (req.method === 'GET' && !match[2]) { reconcileSpin(room); return send(200, view(room, role)); }
       if (req.method === 'POST' && match[2] === 'invite' && role === 'owner') return send(200, { guestToken: room.guestKey });
-      if (req.method === 'POST' && match[2] === 'approve') { room.approved[role] = true; save(); return send(200, view(room, role)); }
+      if (req.method === 'POST' && match[2] === 'approve') { room.approved[role] = true; save(); publish(room); return send(200, view(room, role)); }
       if (req.method === 'POST' && match[2] === 'drop') {
         if (!room.approved.owner || !room.approved.guest) fail('И двамата съседи трябва първо да одобрят всички варианти.');
         if (room.input.mode === 'favor' && role !== 'guest') fail('Този жетон се пуска от съседа ти.');
-        if (room.result === null) { room.result = randomInt(6); room.settledAt = Date.now(); save(); }
+        if (room.result === null) {
+          const watching = presence(room);
+          if (!watching.owner || !watching.guest) fail('И двамата трябва да сте на таблото с отворена игра.');
+          room.result = randomInt(6); room.settledAt = Date.now();
+          room.spin = { startsAt: Date.now() + 1200, duration: 4300, revealDuration: 1600, pausedAt: null, finishedAt: null, path: spinPath(room.result) };
+          save(); publish(room);
+        }
         return send(200, view(room, role));
       }
       fail('Действието е недостъпно', 405);

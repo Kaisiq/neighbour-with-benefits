@@ -4,8 +4,10 @@ const form = $('#setup-form');
 const canvas = $('#plinko');
 const ctx = canvas.getContext('2d');
 let mode = 'favor', room = null, token = '', busy = false, animating = false, sound = false, audio;
-let seenResult = null, chip = null, toastTimer, lastPoll = 0;
-let launchX = .5, trail = [], impacts = [], landingAt = 0;
+let chip = null, toastTimer, clockOffset = 0, liveConnected = false, leaving = false;
+const clientId = crypto.randomUUID();
+let streamController, heartbeat, lastSnapshotAt = 0;
+let trail = [], impacts = [], landingAt = 0;
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 const route = location.pathname;
 const page = route === '/favor' || route === '/dispute' ? 'setup' : route === '/board' ? 'review' : route === '/play' ? 'play' : route === '/result' ? 'result' : 'home';
@@ -16,8 +18,11 @@ document.title = titles[page];
 function toast(message) { $('#toast').textContent = message; $('#toast').classList.add('visible'); clearTimeout(toastTimer); toastTimer = setTimeout(() => $('#toast').classList.remove('visible'), 3500); }
 function error(message = '') { $('#error').textContent = message; $('#error').hidden = !message; }
 async function api(path, data, auth = token) {
+  const startedAt = Date.now();
   const response = await fetch(path, { method: data === undefined ? 'GET' : 'POST', headers: { 'Content-Type': 'application/json', ...(auth ? { Authorization: `Bearer ${auth}` } : {}) }, ...(data === undefined ? {} : { body: JSON.stringify(data) }) });
-  const result = await response.json(); if (!response.ok) throw Error(result.error || 'Нещо се обърка. Опитай отново.'); return result;
+  const result = await response.json();
+  if (result.serverTime) clockOffset = result.serverTime - (startedAt + Date.now()) / 2;
+  if (!response.ok) throw Error(result.error || 'Нещо се обърка. Опитай отново.'); return result;
 }
 function setMode(next) {
   mode = next;
@@ -33,6 +38,7 @@ function renderOptions(options) {
     pocket.setAttribute('aria-label', `Вариант ${index + 1}: ${option.title}. ${option.detail}`);
     pocket.addEventListener('click', () => {
       if (animating || landingAt) return;
+      $('#board-outcome').hidden = false;
       $('#board-outcome').textContent = `${String(index + 1).padStart(2, '0')} · ${option.title} — ${option.detail}`;
       $$('.pocket').forEach((el, i) => el.classList.toggle('inspecting', i === index));
     });
@@ -59,37 +65,92 @@ function renderRoom() {
   $('#continue-button').hidden = !mine;
   $('#continue-button').href = roomUrl(room.result === null ? '/play' : '/result');
   $('#continue-button').textContent = room.result === null ? 'Продължи към Плинко →' : 'Виж резултата →';
-  $$('.board-review-link').forEach(link => link.href = roomUrl('/board'));
+  $$('.board-review-link').forEach(link => link.href = roomUrl('/board?review=1'));
   $('#approval-list').replaceChildren();
   [['owner', room.input.nameA], ['guest', room.input.nameB]].forEach(([role, name]) => {
     const row = document.createElement('div'), person = document.createElement('span'), status = document.createElement('span');
     person.textContent = `${name}${role === room.role ? ' (ти)' : ''}`; status.textContent = room.approved[role] ? 'Прието ✓' : 'Все още не е прието'; if (room.approved[role]) status.className = 'approved'; row.append(person, status); $('#approval-list').append(row);
   });
   const ready = room.approved.owner && room.approved.guest;
+  const watching = room.presence?.owner && room.presence?.guest && liveConnected;
   const canDrop = room.input.mode === 'dispute' || room.role === 'guest';
-  $('#launch-position').disabled = busy || animating || room.result !== null || !ready || !canDrop;
-  $('#board-state').textContent = animating ? 'СЪДБАТА СИ ИГРАЕ С ТЕБ…' : room.result !== null ? 'БОГОВЕТЕ СЕ ПРОИЗНЕСОХА' : ready && canDrop ? 'ИЗБЕРИ НАЧАЛНА ПОЗИЦИЯ' : 'ОЧАКВАМЕ СЪСЕДИТЕ';
-  $('#drop-button').disabled = animating || room.result === null && (!ready || !canDrop);
-  $('#drop-label').textContent = animating ? 'Нека съдбата реши…' : room.result !== null ? 'Виж резултата' : !ready ? 'Изчакваме одобрение' : !canDrop ? `Изчакваме ${room.input.nameB}` : 'Пусни жетона';
-  $('#board-caption').textContent = room.result !== null ? 'Един запазен резултат. Без повторно пускане.' : 'Всеки резултат има шанс 1 към 6.';
-  $('#play-instruction').textContent = room.input.mode === 'favor' ? `${room.input.nameB} пуска. ${room.input.nameA} дължи ответната услуга.` : `${room.input.nameA} и ${room.input.nameB}. Съдбата има последната дума.`;
-  $('#play-status').replaceChildren();
-  if (!ready) {
-    $('#play-status').append(document.createTextNode(!mine ? 'Все още трябва да одобриш вариантите. ' : `Изчакваме одобрение от ${room.role === 'owner' ? room.input.nameB : room.input.nameA}. `));
-    const link = document.createElement('a'); link.href = roomUrl('/board'); link.textContent = 'Прегледай таблото'; $('#play-status').append(link);
-  } else if (!canDrop) $('#play-status').textContent = 'Съседът ти управлява играта. Неговото пускане ще се появи тук.';
-  if (room.result !== null && !animating) highlight(room.result);
+  const paused = room.spin?.pausedAt != null;
+  $('#drop-button').disabled = busy || animating || room.result === null && (!ready || !canDrop || !watching);
+  $('#drop-label').textContent = animating ? paused ? 'На пауза — изчакваме съседа' : serverNow() < room.spin.startsAt ? 'Пригответе се…' : 'Нека съдбата реши…' : room.result !== null ? 'Виж резултата' : !watching ? 'Изчакваме и двамата' : !canDrop ? `Пуска ${room.input.nameB}` : 'Пусни жетона';
+  $('#board-caption').textContent = 'Шест варианта. Равни шансове.';
+  $('#play-instruction').textContent = room.input.mode === 'favor' ? `${room.input.nameB} пуска. ${room.input.nameA} връща услугата.` : 'Едно табло, един и същ резултат и за двамата.';
+  $('#presence-list').replaceChildren();
+  [['owner', room.input.nameA], ['guest', room.input.nameB]].forEach(([role, name]) => {
+    const item = document.createElement('span');
+    const online = room.presence?.[role] && (role !== room.role || liveConnected);
+    item.className = `presence-person${online ? ' online' : ''}`;
+    item.textContent = `${name} · ${online ? 'на линия' : 'изчакваме'}`;
+    $('#presence-list').append(item);
+  });
+  $('#play-status').textContent = !liveConnected ? 'Свързваме ви…' : paused ? 'Играта продължава, когато и двамата отново гледате таблото.' : !watching ? 'Отворете играта и оставете двата екрана активни.' : !canDrop && !animating ? 'Гледате заедно. Съседът ти пуска жетона.' : 'Гледате заедно в реално време.';
+  if (room.result !== null && !animating && !spinPending(room)) highlight(room.result);
   if (page === 'result' && room.result !== null) renderResult();
 }
+const serverNow = () => Date.now() + clockOffset;
+function spinPending(state) {
+  return state.spin && !state.spin.finishedAt;
+}
+function receiveRoom(state) {
+  if (state.serverTime < lastSnapshotAt || room?.result != null && state.result === null) return;
+  lastSnapshotAt = state.serverTime || 0; room = state;
+  const ready = room.approved.owner && room.approved.guest;
+  if (page === 'review' && ready && (room.result === null || spinPending(room)) && !new URLSearchParams(location.search).has('review')) {
+    location.replace(roomUrl('/play')); return;
+  }
+  if (page === 'result' && (room.result === null || spinPending(room))) { location.replace(roomUrl(room.result === null ? '/board' : '/play')); return; }
+  // Completion must not depend on animation frames, which background browsers can suspend.
+  if (page === 'play' && room.result !== null && !spinPending(room)) { showResult(); return; }
+  renderRoom();
+  if (page === 'play' && room.result !== null && !animating) {
+    if (spinPending(room)) animateDrop(room.result);
+    else showResult();
+  }
+}
+async function updatePresence() {
+  if (!room || leaving || !liveConnected) return;
+  try { await api(`/api/rooms/${room.id}/presence`, { clientId, screen: page, visible: !document.hidden }); }
+  catch { liveConnected = false; renderRoom(); streamController?.abort(); }
+}
+async function connectLive() {
+  if (!room || leaving || !['review', 'play'].includes(page)) return;
+  streamController = new AbortController();
+  try {
+    const response = await fetch(`/api/rooms/${room.id}/events?clientId=${clientId}`, { headers: { Authorization: `Bearer ${token}` }, signal: streamController.signal });
+    if (!response.ok || !response.body) throw Error('Live connection unavailable');
+    liveConnected = true; renderRoom();
+    await updatePresence();
+    clearInterval(heartbeat); heartbeat = setInterval(updatePresence, 1000);
+    const reader = response.body.getReader(), decoder = new TextDecoder(); let buffer = '';
+    while (!leaving) {
+      const { done, value } = await reader.read(); if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let boundary;
+      while ((boundary = buffer.indexOf('\n\n')) !== -1) {
+        const event = buffer.slice(0, boundary); buffer = buffer.slice(boundary + 2);
+        if (event.startsWith('data: ')) receiveRoom(JSON.parse(event.slice(6)));
+      }
+    }
+  } catch { /* Reconnect and resume the authoritative timeline after an interruption. */ }
+  finally {
+    clearInterval(heartbeat); liveConnected = false;
+    if (!leaving) { renderRoom(); setTimeout(connectLive, 1000); }
+  }
+}
+document.addEventListener('visibilitychange', updatePresence);
+window.addEventListener('pagehide', () => { leaving = true; clearInterval(heartbeat); streamController?.abort(); });
+
 function highlight(index) { $$('.pocket').forEach((el, i) => el.classList.toggle('winner', i === index)); $$('.outcome-card').forEach((el, i) => el.classList.toggle('selected', i === index)); }
 async function loadRoom(id, secret) {
   try {
-    token = secret; room = await api(`/api/rooms/${id}`); setMode(room.input.mode); renderOptions(room.options); renderRoom();
-    seenResult = room.result;
-    if (page === 'result' && room.result === null) return location.replace(roomUrl('/board'));
-    if (page === 'play' && room.result !== null) return showResult();
-    if (room.result !== null) { chip = { x: (room.result + .5) / 6, y: .98 }; draw(); }
-    else { chip = null; draw(); }
+    token = secret;
+    const initial = await api(`/api/rooms/${id}`);
+    setMode(initial.input.mode); renderOptions(initial.options); receiveRoom(initial);
+    draw(); connectLive();
   } catch (err) { error(err.message); toast(err.message); }
 }
 form.addEventListener('submit', async event => {
@@ -106,7 +167,7 @@ form.addEventListener('submit', async event => {
 $('#board-consent').addEventListener('change', renderRoom);
 $('#approve-button').addEventListener('click', async () => {
   if (!$('#board-consent').checked || busy) return; busy = true;
-  try { room = await api(`/api/rooms/${room.id}/approve`, {}); renderRoom(); toast('Условията са приети. Можеш да продължиш.'); }
+  try { receiveRoom(await api(`/api/rooms/${room.id}/approve`, {})); toast('Условията са приети. Изчакваме и двамата.'); }
   catch (err) { error(err.message); } finally { busy = false; }
 });
 $('#share-button').addEventListener('click', async () => {
@@ -138,21 +199,6 @@ function pegPositions(row) {
   const count = row % 2 ? 5 : 6;
   return Array.from({ length: count }, (_, col) => (col + (row % 2 ? 1 : .5)) / 6);
 }
-function moveLaunch(value) {
-  if (!room || $('#launch-position').disabled || animating) return;
-  launchX = Math.max(.25, Math.min(.75, value));
-  $('#launch-position').value = String(Math.round(launchX * 100));
-  chip = null; draw();
-}
-$('#launch-position').addEventListener('input', event => moveLaunch(Number(event.target.value) / 100));
-canvas.addEventListener('pointerdown', event => {
-  if ($('#launch-position').disabled) return;
-  canvas.setPointerCapture(event.pointerId);
-  moveLaunch((event.clientX - canvas.getBoundingClientRect().left - 17) / (canvas.clientWidth - 34));
-});
-canvas.addEventListener('pointermove', event => {
-  if (canvas.hasPointerCapture(event.pointerId)) moveLaunch((event.clientX - canvas.getBoundingClientRect().left - 17) / (canvas.clientWidth - 34));
-});
 function draw() {
   const width = canvas.clientWidth, height = canvas.clientHeight, dpr = Math.min(window.devicePixelRatio || 1, 2);
   if (!width || !height) return;
@@ -167,9 +213,6 @@ function draw() {
   };
   ctx.strokeStyle = '#aa445019'; ctx.lineWidth = 1;
   for (let i = 1; i < 6; i++) { ctx.beginPath(); ctx.moveTo(px(i / 6), 48); ctx.lineTo(px(i / 6), height); ctx.stroke(); }
-  if (!animating && !landingAt && !$('#launch-position').disabled) {
-    ctx.setLineDash([2, 6]); ctx.strokeStyle = '#ed7a9460'; ctx.beginPath(); ctx.moveTo(px(launchX), 30); ctx.lineTo(px(launchX), 65); ctx.stroke(); ctx.setLineDash([]);
-  }
   for (let row = 0; row < pegRows; row++) {
     const y = (.2 + row * .071) * height;
     for (const x of pegPositions(row)) {
@@ -196,7 +239,7 @@ function draw() {
       ctx.strokeStyle = `rgba(255,99,135,${i / trail.length * .65})`; ctx.lineWidth = 1 + i / trail.length * 5; ctx.lineCap = 'round'; ctx.stroke();
     }
   }
-  const x = px(chip ? chip.x : launchX), y = chip ? chip.y * height : 24;
+  const x = px(chip ? chip.x : .5), y = chip ? chip.y * height : 24;
   glow(x, y, 35, '#fa4d7966');
   const ball = ctx.createRadialGradient(x - 3, y - 4, 1, x, y, 10); ball.addColorStop(0, '#fff1d8'); ball.addColorStop(.4, '#f1c29b'); ball.addColorStop(1, '#a74e4a');
   ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2); ctx.fillStyle = ball; ctx.fill(); ctx.strokeStyle = '#ffdcbd'; ctx.lineWidth = 1.3; ctx.stroke();
@@ -214,71 +257,56 @@ function draw() {
   }
 }
 function animateDrop(index) {
-  if (page !== 'play') { renderRoom(); return; }
+  if (page !== 'play' || animating) return;
   animating = true; trail = []; impacts = []; landingAt = 0;
   $('.board-wrap').classList.add('dropping');
   $$('.pocket').forEach(el => el.classList.remove('inspecting'));
-  $('#board-outcome').textContent = 'Един жетон. Шест възможности. Няма връщане назад.';
+  $('#board-outcome').hidden = true;
   renderRoom();
-  const start = performance.now(), reduced = reducedMotion.matches;
-  const duration = reduced ? 180 : 4300, target = (index + .5) / 6;
-  // A route through real peg coordinates reveals the server's equal-odds draw.
-  // Starting position changes the animation, not the probability or saved result.
-  const path = [{ x: launchX, y: .065 }];
-  for (let row = 0; row < pegRows; row++) {
-    const progress = (row + 1) / (pegRows + 1);
-    const desired = launchX + (target - launchX) * progress + (Math.random() - .5) * .22 * Math.sin(progress * Math.PI);
-    const x = pegPositions(row).reduce((best, candidate) => Math.abs(candidate - desired) < Math.abs(best - desired) ? candidate : best);
-    path.push({ x, y: .2 + row * .071 - .027 });
-  }
-  path.push({ x: target, y: .97 });
-  let lastStep = -1;
-  function frame(now) {
-    const progress = Math.max(0, Math.min(1, (now - start) / duration));
-    // Slow the last two rebounds for a little suspense at the pocket dividers.
+  const path = room.spin.path, target = (index + .5) / 6;
+  let lastStep = -1, landed = false, disconnectedAt = null;
+  function frame() {
+    const spin = room.spin;
+    if (!liveConnected && disconnectedAt === null) disconnectedAt = serverNow();
+    if (liveConnected) disconnectedAt = null;
+    const time = spin.pausedAt ?? disconnectedAt ?? serverNow();
+    const progress = Math.max(0, Math.min(1, (time - spin.startsAt) / spin.duration));
     const travel = progress < .73 ? progress * 1.12 : .8176 + (progress - .73) / .27 * .1824;
     const pos = Math.min(path.length - 1, travel * (path.length - 1));
     const step = Math.min(path.length - 2, Math.floor(pos)), fraction = pos - step;
     const from = path[step], to = path[step + 1];
     chip = { x: from.x + (to.x - from.x) * fraction, y: from.y + (to.y - from.y) * fraction * fraction - (step ? Math.sin(fraction * Math.PI) * .017 : 0) };
-    if (step !== lastStep) {
-      if (step > 0) { impacts.push({ row: step - 1, x: from.x, at: now }); ping(470 + step * 38); }
+    canvas.dataset.progress = progress.toFixed(3);
+    canvas.dataset.position = `${chip.x.toFixed(4)},${chip.y.toFixed(4)}`;
+    canvas.dataset.paused = String(spin.pausedAt != null || !liveConnected);
+    if (time < spin.startsAt && spin.pausedAt == null && liveConnected) $('#drop-label').textContent = `Започваме след ${Math.max(1, Math.ceil((spin.startsAt - time) / 1000))}…`;
+    if (step !== lastStep && spin.pausedAt == null && liveConnected) {
+      if (step > 0) { impacts.push({ row: step - 1, x: from.x, at: performance.now() }); ping(470 + step * 38); }
       lastStep = step;
     }
-    trail.push({ ...chip }); if (trail.length > 14) trail.shift();
-    draw();
-    if (progress < 1) requestAnimationFrame(frame);
-    else {
-      chip = { x: target, y: .97 }; trail = []; landingAt = performance.now();
-      animating = false; highlight(index); renderRoom();
-      $('.board-wrap').classList.remove('dropping'); $('.board-wrap').classList.add('landed');
+    if (spin.pausedAt == null && liveConnected) { trail.push({ ...chip }); if (trail.length > 14) trail.shift(); }
+    if (progress >= 1 && !landed) {
+      landed = true; chip = { x: target, y: .97 }; trail = []; landingAt = performance.now();
+      highlight(index); $('.board-wrap').classList.remove('dropping'); $('.board-wrap').classList.add('landed');
+      $('#board-outcome').hidden = false;
       $('#board-outcome').textContent = `${String(index + 1).padStart(2, '0')} · ${room.options[index].title}`;
       $('#board-outcome').classList.add('revealed');
-      $('#board-state').textContent = 'ЕТО ТВОЯТА СЪДБА';
       [0, 110, 220].forEach((delay, i) => setTimeout(() => ping([659, 831, 988][i]), delay));
-      const revealStart = performance.now();
-      function reveal(now) { draw(); if (now - revealStart < (reduced ? 250 : 1600)) requestAnimationFrame(reveal); else showResult(); }
-      requestAnimationFrame(reveal);
     }
+    draw();
+    if (spin.finishedAt && liveConnected) { animating = false; showResult(); }
+    else requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
 }
 $('#drop-button').addEventListener('click', async () => {
   if (!room || busy || animating) return;
-  if (room.result !== null) return showResult(); busy = true; $('#drop-button').disabled = true; $('#launch-position').disabled = true;
-  try { room = await api(`/api/rooms/${room.id}/drop`, {}); seenResult = room.result; animateDrop(room.result); }
-  catch (err) { error(err.message); } finally { busy = false; if (!animating) renderRoom(); }
+  if (room.result !== null) return showResult();
+  busy = true; renderRoom();
+  try { receiveRoom(await api(`/api/rooms/${room.id}/drop`, {})); }
+  catch (err) { error(err.message); }
+  finally { busy = false; renderRoom(); }
 });
-setInterval(async () => {
-  if (!room || busy || animating || document.hidden || room.result !== null || Date.now() - lastPoll < 1800) return;
-  lastPoll = Date.now(); const id = room.id;
-  try {
-    const updated = await api(`/api/rooms/${id}`); if (room?.id !== id || busy || animating) return;
-    room = updated;
-    if (room.result !== null && seenResult === null) { seenResult = room.result; animateDrop(room.result); }
-    else renderRoom();
-  } catch { /* Retain the board through temporary connection failures. */ }
-}, 2000);
 window.addEventListener('hashchange', () => location.reload());
 new ResizeObserver(() => draw()).observe(canvas);
 setMode(route === '/dispute' ? 'dispute' : 'favor');

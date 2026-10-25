@@ -14,6 +14,8 @@ Open `http://localhost:3000`. Create a board, read the six outcomes, accept the 
 
 The interface is split into focused pages: `/` chooses a mode, `/favor` and `/dispute` collect the request, `/board` reviews and approves outcomes, `/play` runs Plinko, and `/result` shows the saved settlement. Board links retain their private access token in the URL fragment. Older root-page invite links still open the review page.
 
+Approving both sides automatically brings both players to Plinko. Authenticated server-sent events synchronize approvals, presence, a server-generated animation path, and its shared timeline. Both players must have the game visible before a drop is accepted. Leaving, hiding or disconnecting pauses the shared animation; returning resumes the same path and saved outcome. Brief network delays can affect presence detection. The server announces completion so background rendering cannot strand one player. Keep proxy buffering disabled for `/api/rooms/*/events` (the app sends `X-Accel-Buffering: no`); retain one server replica.
+
 ## Host with Docker / Kuso
 
 Use the included Dockerfile, container port **3000**, and your domain. Mount a persistent volume at **/app/data** so boards survive redeploys. Run one replica: storage is a small JSON file intended for hackathon traffic. No database, build command, or package installation needed.
@@ -33,7 +35,7 @@ Set `DEEPSEEK_API_KEY` privately in Kuso's runtime environment, then redeploy. T
 
 For local development, copy `.env.example` to the ignored `.env` file, enter your key there privately, and run `npm start`. Local `.env` files load automatically; host-provided variables take precedence. The Docker image does not include `.env`; pass runtime variables through your hosting platform or Docker's `--env-file .env` option.
 
-Edit **`prompts/board.txt`** to tune the generation voice, then restart or redeploy. `DEEPSEEK_PROMPT_FILE` can point to a different server-side prompt file. The prompt connects every option to the actual request and balances effort, cost and embarrassment. Heat selects cheeky, raunchy or foul-mouthed adult comedy. Favor outcomes explicitly name the requester as owing the return favor. In disputes, the server preserves the two original demands regardless of model output. Both participants review all six outcomes before approving.
+Edit **`prompts/board.txt`** to tune the generation voice, then restart or redeploy. `DEEPSEEK_PROMPT_FILE` can point to a different server-side prompt file. The prompt connects every option to the actual request and balances effort, cost and embarrassment. The tone is cheeky, crude adult comedy with innuendo instead of graphic sexual content. Favor outcomes explicitly name the requester as owing the return favor. In disputes, the server preserves the two original demands regardless of model output. Both participants review all six outcomes before approving.
 
 Requests use JSON output with a 2,000-token cap and a 45-second timeout. Invalid, incomplete, duplicate-title or unavailable responses fall back to a clearly labeled house deck. The server logs a failure category without credentials or request content. A **DeepSeek generated** label appears only after a valid response. No key means the house deck is used and labeled as unconfigured.
 
